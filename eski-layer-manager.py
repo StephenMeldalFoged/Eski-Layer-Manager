@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.4.7
+Version: 0.4.10
 """
 
 from PySide6 import QtWidgets, QtCore
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.4.7"
+VERSION = "0.4.10"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -147,6 +147,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
     def populate_layers(self):
         """Populate the layer list with layers from 3ds Max"""
+        # Temporarily disconnect itemChanged signal to avoid triggering rename during population
+        try:
+            self.layer_tree.itemChanged.disconnect(self.on_layer_renamed)
+        except:
+            pass
+
         self.layer_tree.clear()
 
         if rt is None:
@@ -155,6 +161,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             QtWidgets.QTreeWidgetItem(self.layer_tree, ["[TEST MODE] 0 (default)"])
             QtWidgets.QTreeWidgetItem(self.layer_tree, ["[TEST MODE] Layer 1"])
             QtWidgets.QTreeWidgetItem(self.layer_tree, ["[TEST MODE] Layer 2"])
+            # Reconnect signal
+            self.layer_tree.itemChanged.connect(self.on_layer_renamed)
             return
 
         print("[POPULATE] rt is available - loading real layers")
@@ -182,6 +190,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             error_msg = f"Error loading layers: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
             QtWidgets.QTreeWidgetItem(self.layer_tree, [error_msg])
+
+        # Reconnect the itemChanged signal
+        self.layer_tree.itemChanged.connect(self.on_layer_renamed)
 
     def on_layer_selected(self, item, column):
         """Handle layer selection - make the selected layer active in 3ds Max"""
@@ -215,16 +226,25 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
     def on_layer_double_clicked(self, item, column):
         """Handle layer double-click - start inline rename"""
+        print("[RENAME] Double-click detected")
+
         # Don't process test mode items
         if item.text(0).startswith("[TEST MODE]"):
+            print("[RENAME] Skipping test mode item")
             return
 
         # Store the original name before editing
         self.editing_layer_name = item.text(0)
+        print(f"[RENAME] Starting edit for layer: {self.editing_layer_name}")
 
-        # Make the item editable
+        # Block signals while making item editable to avoid premature itemChanged trigger
+        self.layer_tree.blockSignals(True)
         item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+        self.layer_tree.blockSignals(False)
+
+        # Now start editing
         self.layer_tree.editItem(item, 0)
+        print("[RENAME] Edit mode activated")
 
     def on_layer_context_menu(self, position):
         """Handle right-click context menu on layer"""
@@ -245,7 +265,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
     def on_layer_renamed(self, item, column):
         """Handle layer rename after inline editing"""
+        print(f"[RENAME] on_layer_renamed called, editing_layer_name: {self.editing_layer_name}")
+
         if rt is None or self.editing_layer_name is None:
+            print("[RENAME] Skipping - rt is None or not editing")
             return
 
         try:
@@ -253,12 +276,16 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             new_name = item.text(0)
             old_name = self.editing_layer_name
 
+            print(f"[RENAME] Old name: '{old_name}', New name: '{new_name}'")
+
             # Don't process test mode items
             if old_name.startswith("[TEST MODE]"):
+                print("[RENAME] Skipping test mode item")
                 return
 
             # Only process if name actually changed
             if new_name != old_name and new_name:
+                print(f"[RENAME] Name changed, updating in 3ds Max")
                 # Find the layer in 3ds Max by name
                 layer_manager = rt.layerManager
                 layer_count = layer_manager.count
@@ -270,6 +297,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         layer.setname(new_name)
                         print(f"[LAYER] Renamed layer from '{old_name}' to '{new_name}'")
                         break
+            else:
+                print("[RENAME] Name unchanged or empty")
 
             # Reset editing flag
             self.editing_layer_name = None

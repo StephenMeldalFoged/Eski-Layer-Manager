@@ -3,7 +3,7 @@
 
 (
     -- Version of the installer
-    local installerVersion = "0.4.0"
+    local installerVersion = "0.4.10"
 
     -- Function to check if macro file exists
     fn macroExists = (
@@ -172,66 +172,182 @@
         )
     )
 
+    -- Function to get installed Python script version
+    fn getInstalledVersion = (
+        local scriptsDir = getDir #userScripts
+        local pythonFile = scriptsDir + "\\eski_layer_manager.py"
+
+        if doesFileExist pythonFile then (
+            try (
+                local f = openFile pythonFile mode:"r"
+                local versionLine = ""
+                -- Read first 10 lines to find version
+                for i = 1 to 10 do (
+                    local line = readLine f
+                    if line != undefined and (matchPattern line pattern:"*Version:*") then (
+                        versionLine = line
+                        exit
+                    )
+                )
+                close f
+
+                if versionLine != "" then (
+                    -- Extract version number (format: "Version: 0.4.7")
+                    local parts = filterString versionLine ":"
+                    if parts.count >= 2 then (
+                        return (trimLeft (trimRight parts[2]))
+                    )
+                )
+            ) catch ()
+        )
+        return "Unknown"
+    )
+
     -- Create the installer dialog
-    rollout eskiInstallerDialog "Eski Layer Manager Installer v0.4.0" width:400 height:300 (
+    rollout eskiInstallerDialog "Eski Layer Manager Installer v0.4.10" width:400 height:600 (
 
         label lblTitle "Eski Layer Manager - Macro Button Setup" align:#center style_sunkenedge:true offset:[0,10]
-        label lblVersion "Installer Version: 0.4.0" align:#center offset:[0,5]
+        label lblVersion "Installer Version: 0.4.10" align:#center offset:[0,5]
 
-        groupBox grpStatus "Current Status" pos:[10,60] width:380 height:120
-        editText lblStatus "" pos:[20,80] width:360 height:90 align:#left readOnly:true
+        groupBox grpStatus "Current Status" pos:[10,60] width:380 height:420
+        editText lblStatus "" pos:[20,80] width:360 height:390 align:#left readOnly:true
 
-        button btnInstall "Install / Upgrade to Latest Version" pos:[10,190] width:380 height:45
-        button btnUninstall "Uninstall Current and Older Versions" pos:[10,245] width:380 height:45
+        button btnInstall "Install / Upgrade to Latest Version" pos:[10,490] width:380 height:45
+        button btnUninstall "Uninstall Current and Older Versions" pos:[10,545] width:380 height:45
+
+        -- Function to compare version strings (returns true if v1 < v2)
+        fn isNewerVersion v1 v2 = (
+            if v1 == "Unknown" then return true
+            if v2 == "Unknown" then return false
+
+            -- Split version strings by dots
+            local v1Parts = filterString v1 "."
+            local v2Parts = filterString v2 "."
+
+            -- Compare each part
+            for i = 1 to (amax v1Parts.count v2Parts.count) do (
+                local part1 = if i <= v1Parts.count then (v1Parts[i] as integer) else 0
+                local part2 = if i <= v2Parts.count then (v2Parts[i] as integer) else 0
+
+                if part1 < part2 then return true
+                if part1 > part2 then return false
+            )
+
+            return false  -- versions are equal
+        )
 
         -- Check status on open
         on eskiInstallerDialog open do (
+            local statusText = ""
+            local installedVersion = getInstalledVersion()
+
             if macroExists() then (
-                lblStatus.text = "STATUS: Macro button is currently INSTALLED\n\nCategory: Eski Tools\nButton Name: EskiLayerManager"
+                statusText = "STATUS: Macro button is currently INSTALLED\n\n"
+                statusText += "Category: Eski Tools\n"
+                statusText += "Button Name: EskiLayerManager\n"
+                statusText += "Installed Version: " + installedVersion + "\n"
+                statusText += "Installer Version: " + installerVersion + "\n\n"
+
+                -- Check if update is available
+                if isNewerVersion installedVersion installerVersion then (
+                    statusText += "⚠ UPDATE AVAILABLE!\n"
+                    statusText += "Click 'Install / Upgrade' to update to v" + installerVersion
+                ) else if installedVersion == installerVersion then (
+                    statusText += "✓ You have the latest version"
+                ) else (
+                    statusText += "ℹ Installed version is newer than installer"
+                )
             ) else (
-                lblStatus.text = "STATUS: Macro button is NOT installed\n\nNo macro found in 'Eski Tools' category"
+                statusText = "STATUS: Macro button is NOT installed\n\n"
+                statusText += "No macro found in 'Eski Tools' category\n"
+                if installedVersion != "Unknown" then (
+                    statusText += "\nPython script found (version " + installedVersion + ") but macro not installed"
+                )
             )
+
+            lblStatus.text = statusText
         )
 
         -- Install/Upgrade button
         on btnInstall pressed do (
             local wasInstalled = macroExists()
+            local statusText = ""
+
+            -- Close any existing Layer Manager window before upgrade
+            try (
+                python.Execute "import sys"
+                python.Execute "if 'eski_layer_manager' in sys.modules:"
+                python.Execute "    import eski_layer_manager"
+                python.Execute "    if hasattr(eski_layer_manager, '_layer_manager_instance') and eski_layer_manager._layer_manager_instance[0] is not None:"
+                python.Execute "        try:"
+                python.Execute "            eski_layer_manager._layer_manager_instance[0].close()"
+                python.Execute "        except: pass"
+                statusText += "✓ Closed existing Layer Manager window\n"
+            ) catch ()
 
             -- First, try to copy the Python script
             local copyResult = copyPythonScript()
             local pythonCopied = copyResult[1]
-            local pythonMsg = ""
 
             if pythonCopied then (
-                pythonMsg = "Python script copied from:\n" + copyResult[2] + "\n\n"
+                statusText += "✓ Python script copied successfully\n"
+                statusText += "  From: " + copyResult[2] + "\n"
             ) else (
-                -- Python script not found, but continue with macro installation
-                pythonMsg = "WARNING: Could not find eski-layer-manager.py\n" + copyResult[2] + "\n\nYou will need to manually copy it to:\n" + (getDir #scripts) + "\n\n"
+                statusText += "⚠ WARNING: Could not find eski-layer-manager.py\n"
+                statusText += "  " + copyResult[2] + "\n"
+                statusText += "  You will need to manually copy it to:\n"
+                statusText += "  " + (getDir #userScripts) + "\n"
+            )
+
+            -- Reload the Python module to pick up changes
+            if pythonCopied then (
+                try (
+                    python.Execute "import importlib"
+                    python.Execute "if 'eski_layer_manager' in sys.modules: importlib.reload(sys.modules['eski_layer_manager'])"
+                    statusText += "✓ Python module reloaded\n\n"
+                ) catch (
+                    statusText += "⚠ Could not reload Python module\n\n"
+                )
+            ) else (
+                statusText += "\n"
             )
 
             if installMacro() then (
                 -- Delay to allow macros to fully reload
                 windows.processPostedMessages()
 
-                -- Check if there's a keyboard shortcut assigned
-                local hotKeyStr = "No keyboard shortcut assigned"
-                local hotKeyFound = false
-                -- Note: Hotkey detection is complex and varies by 3ds Max version
-                -- Users can check manually in Customize > Customize User Interface > Keyboard tab
+                local installedVersion = getInstalledVersion()
 
                 if wasInstalled then (
-                    messageBox (pythonMsg + "Macro button UPGRADED successfully!\n\nThe button has been updated to the latest version.\nIf you already have it on a toolbar, it will use the new version automatically.\n\n" + hotKeyStr) title:"Success" beep:false
+                    statusText += "✓ Macro button UPGRADED successfully!\n\n"
+                    statusText += "Installed Version: " + installedVersion + "\n"
+                    statusText += "Category: Eski Tools\n"
+                    statusText += "Button Name: EskiLayerManager\n\n"
+                    statusText += "Changes are live! Click your toolbar button\n"
+                    statusText += "to launch the updated Layer Manager.\n"
                 ) else (
-                    messageBox (pythonMsg + "Macro button INSTALLED successfully!\n\nNext steps:\n1. Press Y or go to: Customize > Customize User Interface\n2. Select category: 'Eski Tools'\n3. Drag 'EskiLayerManager' to any toolbar\n4. Click Save and Close\n\nThen click the button to launch the Layer Manager!\n\n" + hotKeyStr + (if not hotKeyFound then "\n\nTip: You can assign a keyboard shortcut in:\nCustomize > Customize User Interface > Keyboard tab" else "")) title:"Success" beep:false
+                    statusText += "✓ Macro button INSTALLED successfully!\n\n"
+                    statusText += "Installed Version: " + installedVersion + "\n"
+                    statusText += "Category: Eski Tools\n"
+                    statusText += "Button Name: EskiLayerManager\n\n"
+                    statusText += "NEXT STEPS:\n"
+                    statusText += "1. Press Y or go to:\n"
+                    statusText += "   Customize > Customize User Interface\n"
+                    statusText += "2. Select category: 'Eski Tools'\n"
+                    statusText += "3. Drag 'EskiLayerManager' to any toolbar\n"
+                    statusText += "4. Click Save and Close\n\n"
+                    statusText += "Then click the button to launch the Layer Manager!\n\n"
+                    statusText += "Tip: You can assign a keyboard shortcut in:\n"
+                    statusText += "Customize > Customize User Interface > Keyboard tab"
                 )
 
-                -- Print hotkey info to listener as well
-                format "Eski Layer Manager installed: %\n" hotKeyStr
-
-                -- Update status
-                lblStatus.text = "STATUS: Macro button is currently INSTALLED\n\nCategory: Eski Tools\nButton Name: EskiLayerManager"
+                -- Update status window
+                lblStatus.text = statusText
             ) else (
-                messageBox "Installation FAILED!\n\nCould not create macro file. Check permissions." title:"Error"
+                statusText += "✗ Installation FAILED!\n\n"
+                statusText += "Could not create macro file.\n"
+                statusText += "Check permissions and try again."
+                lblStatus.text = statusText
             )
         )
 
@@ -240,26 +356,31 @@
             if macroExists() then (
                 if queryBox "Are you sure you want to UNINSTALL the Eski Layer Manager?\n\nThis will remove:\n- Macro button file (.mcr)\n- Python script file (.py)\n- Requires 3ds Max restart to fully clear actions\n\n(You can reinstall anytime by running this script again)" title:"Confirm Uninstall" then (
                     if uninstallMacro() then (
-                        local msg = "Files REMOVED successfully!\n\n"
-                        msg += "✓ Macro button file deleted\n"
-                        msg += "✓ Python script deleted\n\n"
-                        msg += "NEXT STEPS - Complete Removal:\n\n"
-                        msg += "1. Close this dialog\n"
-                        msg += "2. Remove button from toolbars (if present)\n"
-                        msg += "3. Remove keyboard shortcuts (Customize > Keyboard tab)\n"
-                        msg += "4. RESTART 3ds Max\n\n"
-                        msg += "After restart, the action will be completely removed from\nthe Customize User Interface lists."
+                        local statusText = "✓ Files REMOVED successfully!\n\n"
+                        statusText += "✓ Macro button file deleted\n"
+                        statusText += "✓ Python script deleted\n\n"
+                        statusText += "NEXT STEPS - Complete Removal:\n\n"
+                        statusText += "1. Close this dialog\n"
+                        statusText += "2. Remove button from toolbars (if present)\n"
+                        statusText += "3. Remove keyboard shortcuts\n"
+                        statusText += "   (Customize > Keyboard tab)\n"
+                        statusText += "4. RESTART 3ds Max\n\n"
+                        statusText += "After restart, the action will be completely\n"
+                        statusText += "removed from the Customize User Interface lists."
 
-                        messageBox msg title:"Uninstalled - Restart Required" beep:false
-
-                        -- Update status
-                        lblStatus.text = "STATUS: Files deleted - RESTART 3ds Max to complete removal\n\nMacro and Python files have been deleted"
+                        -- Update status window
+                        lblStatus.text = statusText
                     ) else (
-                        messageBox "Uninstallation FAILED!\n\nCould not remove files. Check listener for details." title:"Error"
+                        local statusText = "✗ Uninstallation FAILED!\n\n"
+                        statusText += "Could not remove files.\n"
+                        statusText += "Check listener for details."
+                        lblStatus.text = statusText
                     )
                 )
             ) else (
-                messageBox "No macro button found to uninstall!\n\nThe Eski Layer Manager macro is not currently installed." title:"Nothing to Uninstall" beep:false
+                local statusText = "⚠ Nothing to uninstall\n\n"
+                statusText += "The Eski Layer Manager macro is not currently installed."
+                lblStatus.text = statusText
             )
         )
     )
