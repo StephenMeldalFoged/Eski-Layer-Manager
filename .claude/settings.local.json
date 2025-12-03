@@ -10,7 +10,9 @@
       "Bash(git checkout:*)",
       "Bash(git push:*)",
       "Bash(python -m py_compile:*)",
-      "WebFetch(domain:forums.autodesk.com)"
+      "WebFetch(domain:forums.autodesk.com)",
+      "WebFetch(domain:knowledge.autodesk.com)",
+      "WebFetch(domain:www.scriptspot.com)"
     ],
     "deny": [],
     "ask": []

@@ -1,0 +1,179 @@
+ESKI LAYER MANAGER - FEATURE WISHLIST
+======================================
+
+Based on research of 3ds Max 2026 documentation and community feedback.
+Prioritized by frequency of use, time savings, and workflow improvement.
+
+---
+
+TOP 5 ESSENTIAL FEATURES
+=========================
+
+1. BULK LAYER VISIBILITY & FREEZE CONTROL WITH ISOLATION MODE
+   -----------------------------------------------------------
+   What it does:
+   - Single-click hide/show/freeze/unfreeze toggles for each layer
+   - "Isolate" mode: hide all layers except selected one(s)
+   - "Solo" selected layer(s) while keeping layer structure visible
+   - Batch operations: select multiple layers, apply action to all
+
+   Why it's essential:
+   - Most frequently used operation (50+ times per session)
+   - Native UI requires multiple clicks through menus
+   - Critical for managing complex scenes with 20+ layers
+   - Saves 5-10 seconds per operation
+
+   API Methods:
+   - layer.ishidden = True/False
+   - layer.isfrozen = True/False
+   - layer.nodes(nodes_array)
+
+
+2. QUICK OBJECT SELECTION BY LAYER
+   ---------------------------------
+   What it does:
+   - Click layer to instantly select all objects on that layer
+   - Ctrl+Click for additive selection (add to current selection)
+   - Visual feedback showing object count per layer
+   - "Select by Current Layer" quick button
+
+   Why it's essential:
+   - Second most common operation (20-30 times per session)
+   - Native workflow requires multiple steps (right-click → Select All)
+   - Essential for scene organization and object manipulation
+   - Dramatically improves imported CAD file cleanup
+
+   API Methods:
+   - layer.select(True)
+   - layer.getNumNodes()
+   - layer_manager.current
+
+
+3. DRAG-AND-DROP OBJECT ASSIGNMENT BETWEEN LAYERS
+   -----------------------------------------------
+   What it does:
+   - Drag selected objects from viewport to target layer
+   - Move objects between layers by dragging
+   - "Add Selection to Layer" dropdown menu
+   - Visual indicator showing which layer objects belong to
+
+   Why it's essential:
+   - Native "Move to Layer" requires 2-step process
+   - Critical for organizing imported scenes and cleanup
+   - Used 10-15 times per complex scene
+   - Reduces 4-click operation to 1 drag
+   - Valuable when inheriting files from other artists
+
+   API Methods:
+   - layer.addnode(node)
+   - layer_manager.current.addnode(node)
+   - for obj in selection: layer.addnode(obj)
+
+
+4. LAYER HIERARCHY WITH PARENT/CHILD RELATIONSHIPS
+   ------------------------------------------------
+   What it does:
+   - Create nested folder structure for layers (unlimited depth)
+   - Expand/collapse parent layers to show/hide children
+   - Ctrl+Click to expand/collapse entire hierarchy
+   - Drag layers to reparent under different parents
+   - Batch operations affect all children (hide parent = hide children)
+   - Color-coded hierarchy visualization
+
+   Why it's essential:
+   - Critical for large architectural/VFX projects (50+ layers)
+   - Most requested feature in community forums
+   - Third-party "Nested Layer Manager" is one of most downloaded scripts
+   - Reduces cognitive load in 100-layer scenes
+   - Organize by building section, object type, or design variant
+
+   API Methods:
+   - layer.getParent()
+   - layer.setParent(parent_layer)
+   - layer.getChild(index)
+   - layer.getNumChildren()
+   - layer.inheritVisibility
+
+
+5. SMART LAYER SEARCH/FILTER WITH PROPERTY DISPLAY
+   ------------------------------------------------
+   What it does:
+   - Live search/filter box: type to filter layers by name
+   - Filter by state: show only visible/hidden/frozen/active layers
+   - Property columns: color swatch, visibility icon, freeze icon, render icon
+   - Quick property toggles (checkboxes for render visibility, GI exclusion)
+   - Highlight layers containing selected objects
+   - "Find Layer of Selected Object" button
+
+   Why it's essential:
+   - Native Layer Explorer lacks search functionality
+   - In 30+ layer scenes, scrolling wastes time (2-3 min/session)
+   - Visual property indicators prevent mistakes
+   - Critical for collaborative workflows with inherited layer structures
+   - Property visibility prevents rendering errors
+
+   API Methods:
+   - layer.name
+   - layer.ishidden
+   - layer.isfrozen
+   - layer.renderable
+   - layer.wireColor
+   - layer.isGIExcluded
+   - layer_manager.getLayerFromName(name)
+   - node.layer
+
+
+---
+
+HONORABLE MENTIONS (Future Features)
+=====================================
+
+6. Layer Color Management
+   - Click color swatch to change wireframe color
+   - Color presets for quick assignment
+   - API: layer.wireColor
+
+7. Create/Rename/Delete Operations
+   - "New Layer" with automatic naming
+   - "New Layer from Selection"
+   - Inline rename (double-click)
+   - Safe delete (check if empty)
+   - API: layer_manager.newLayer(), layer.setname(), layer_manager.deleteLayerByName()
+
+8. Layer Property Presets
+   - Save/load layer configurations
+   - Quick apply common property combos (frozen+gray, hidden+non-renderable)
+   - Per-project layer templates
+
+---
+
+PRIORITY JUSTIFICATION
+=======================
+
+Ranking based on:
+1. Frequency of use (visibility = 50+ times vs presets = 2-3 times)
+2. Time savings (isolation saves 10+ clicks vs rename saves 2 clicks)
+3. Native UI pain points (no drag-drop, poor state visibility)
+4. Community requests (nested layers top-requested since 2015)
+5. Error prevention (visual indicators prevent costly mistakes)
+
+Strategy: Prioritize SPEED of common operations (1-3) over organizational
+features (4) over quality-of-life improvements (5+).
+
+---
+
+CURRENT IMPLEMENTATION STATUS
+==============================
+
+✓ Implemented:
+- Dockable window interface
+- Live layer list with automatic refresh
+- Click layer to make it active
+- Singleton pattern (one instance only)
+
+⧗ In Progress:
+- [Add features from top 5 list above]
+
+✗ Not Started:
+- All top 5 features
+- Honorable mentions

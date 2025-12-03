@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.4.3
+Version: 0.4.7
 """
 
 from PySide6 import QtWidgets, QtCore
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.4.3"
+VERSION = "0.4.7"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -68,6 +68,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.callback_id = None
         self.setup_callbacks()
 
+        # Track layer names before editing to detect renames
+        self.editing_layer_name = None
+
         # Initialize UI
         self.init_ui()
 
@@ -99,6 +102,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.setHeaderLabel("Layer Hierarchy")
         self.layer_tree.setAlternatingRowColors(True)
         self.layer_tree.itemClicked.connect(self.on_layer_selected)
+        self.layer_tree.itemDoubleClicked.connect(self.on_layer_double_clicked)
+        self.layer_tree.itemChanged.connect(self.on_layer_renamed)
+        self.layer_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.layer_tree.customContextMenuRequested.connect(self.on_layer_context_menu)
         top_layout.addWidget(self.layer_tree)
 
         # Bottom section - will contain object list
@@ -206,6 +213,77 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             error_msg = f"Error setting active layer: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
 
+    def on_layer_double_clicked(self, item, column):
+        """Handle layer double-click - start inline rename"""
+        # Don't process test mode items
+        if item.text(0).startswith("[TEST MODE]"):
+            return
+
+        # Store the original name before editing
+        self.editing_layer_name = item.text(0)
+
+        # Make the item editable
+        item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+        self.layer_tree.editItem(item, 0)
+
+    def on_layer_context_menu(self, position):
+        """Handle right-click context menu on layer"""
+        item = self.layer_tree.itemAt(position)
+        if item is None:
+            return
+
+        # Create context menu
+        menu = QtWidgets.QMenu(self)
+        rename_action = menu.addAction("Rename Layer")
+
+        # Show menu and get selected action
+        action = menu.exec(self.layer_tree.viewport().mapToGlobal(position))
+
+        if action == rename_action:
+            # Trigger inline rename
+            self.on_layer_double_clicked(item, 0)
+
+    def on_layer_renamed(self, item, column):
+        """Handle layer rename after inline editing"""
+        if rt is None or self.editing_layer_name is None:
+            return
+
+        try:
+            # Get the new name from the item
+            new_name = item.text(0)
+            old_name = self.editing_layer_name
+
+            # Don't process test mode items
+            if old_name.startswith("[TEST MODE]"):
+                return
+
+            # Only process if name actually changed
+            if new_name != old_name and new_name:
+                # Find the layer in 3ds Max by name
+                layer_manager = rt.layerManager
+                layer_count = layer_manager.count
+
+                for i in range(layer_count):
+                    layer = layer_manager.getLayer(i)
+                    if layer and str(layer.name) == old_name:
+                        # Rename the layer in 3ds Max
+                        layer.setname(new_name)
+                        print(f"[LAYER] Renamed layer from '{old_name}' to '{new_name}'")
+                        break
+
+            # Reset editing flag
+            self.editing_layer_name = None
+
+            # Make item non-editable again
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Error renaming layer: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] {error_msg}")
+            # Reset editing flag
+            self.editing_layer_name = None
+
     def showEvent(self, event):
         """Handle show event - refresh layers when window is shown"""
         super(EskiLayerManager, self).showEvent(event)
@@ -218,22 +296,32 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         try:
-            # Create a callback function that will refresh the layers
+            # Create callback functions
             callback_code = """
 global EskiLayerManagerCallback
 fn EskiLayerManagerCallback = (
     python.Execute "import eski_layer_manager; eski_layer_manager.refresh_from_callback()"
 )
+
+global EskiLayerManagerSceneCallback
+fn EskiLayerManagerSceneCallback = (
+    python.Execute "import eski_layer_manager; eski_layer_manager.refresh_on_scene_change()"
+)
 """
             rt.execute(callback_code)
 
-            # Register callbacks for layer-related events
-            # layerCreated, layerDeleted, layerRenamed
-            self.callback_id = rt.callbacks.addScript(rt.Name("layerCreated"), "EskiLayerManagerCallback()")
+            # Register callbacks for layer-related events (use regular refresh)
+            rt.callbacks.addScript(rt.Name("layerCreated"), "EskiLayerManagerCallback()")
             rt.callbacks.addScript(rt.Name("layerDeleted"), "EskiLayerManagerCallback()")
             rt.callbacks.addScript(rt.Name("nodeLayerChanged"), "EskiLayerManagerCallback()")
 
-            print("[CALLBACKS] Layer change callbacks registered")
+            # Register callbacks for scene events (use scene refresh - reopen window)
+            rt.callbacks.addScript(rt.Name("filePostOpen"), "EskiLayerManagerSceneCallback()")
+            rt.callbacks.addScript(rt.Name("systemPostReset"), "EskiLayerManagerSceneCallback()")
+            rt.callbacks.addScript(rt.Name("systemPostNew"), "EskiLayerManagerSceneCallback()")
+            rt.callbacks.addScript(rt.Name("postMerge"), "EskiLayerManagerSceneCallback()")
+
+            print("[CALLBACKS] Layer change and scene callbacks registered")
         except Exception as e:
             print(f"[CALLBACKS] Failed to register callbacks: {e}")
 
@@ -247,7 +335,11 @@ fn EskiLayerManagerCallback = (
             rt.callbacks.removeScripts(rt.Name("layerCreated"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("layerDeleted"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("nodeLayerChanged"), id=rt.Name("EskiLayerManagerCallback"))
-            print("[CALLBACKS] Layer change callbacks removed")
+            rt.callbacks.removeScripts(rt.Name("filePostOpen"), id=rt.Name("EskiLayerManagerCallback"))
+            rt.callbacks.removeScripts(rt.Name("systemPostReset"), id=rt.Name("EskiLayerManagerCallback"))
+            rt.callbacks.removeScripts(rt.Name("systemPostNew"), id=rt.Name("EskiLayerManagerCallback"))
+            rt.callbacks.removeScripts(rt.Name("postMerge"), id=rt.Name("EskiLayerManagerCallback"))
+            print("[CALLBACKS] All callbacks removed")
         except Exception as e:
             print(f"[CALLBACKS] Failed to remove callbacks: {e}")
 
@@ -275,6 +367,26 @@ def refresh_from_callback():
             _layer_manager_instance[0].isVisible()
             # Refresh the layers
             _layer_manager_instance[0].populate_layers()
+        except (RuntimeError, AttributeError):
+            # Widget was deleted
+            _layer_manager_instance[0] = None
+
+
+def refresh_on_scene_change():
+    """
+    Called by scene change callbacks (file open, reset, new, merge)
+    Closes current instance and opens a fresh one
+    """
+    global _layer_manager_instance
+
+    if _layer_manager_instance[0] is not None:
+        try:
+            # Check if widget is still valid and visible
+            if _layer_manager_instance[0].isVisible():
+                # Close the current instance
+                _layer_manager_instance[0].close()
+                # Open a new instance
+                show_layer_manager()
         except (RuntimeError, AttributeError):
             # Widget was deleted
             _layer_manager_instance[0] = None
