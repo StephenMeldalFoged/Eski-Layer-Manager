@@ -2,17 +2,19 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.3.7
+Version: 0.3.8
 """
 
 from PySide6 import QtWidgets, QtCore
 try:
     from pymxs import runtime as rt
     import MaxPlus
-except ImportError:
+    print("[IMPORT] Successfully imported pymxs and MaxPlus")
+except ImportError as e:
     # For development/testing outside 3ds Max
     rt = None
     MaxPlus = None
+    print(f"[IMPORT] Failed to import pymxs/MaxPlus: {e}")
 
 # Try to import qtmax for docking functionality
 try:
@@ -23,7 +25,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.3.7"
+VERSION = "0.3.8"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -129,10 +131,13 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         if rt is None:
             # Testing mode outside 3ds Max - add dummy data
+            print("[POPULATE] rt is None - running in TEST MODE")
             QtWidgets.QTreeWidgetItem(self.layer_tree, ["[TEST MODE] 0 (default)"])
             QtWidgets.QTreeWidgetItem(self.layer_tree, ["[TEST MODE] Layer 1"])
             QtWidgets.QTreeWidgetItem(self.layer_tree, ["[TEST MODE] Layer 2"])
             return
+
+        print("[POPULATE] rt is available - loading real layers")
 
         try:
             # Get the layer manager from 3ds Max
