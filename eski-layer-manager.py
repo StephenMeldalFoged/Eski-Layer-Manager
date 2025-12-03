@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.4.2
+Version: 0.4.3
 """
 
 from PySide6 import QtWidgets, QtCore
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -197,7 +197,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 layer = layer_manager.getLayer(i)
                 if layer and str(layer.name) == layer_name:
                     # Set this layer as the current layer
-                    layer_manager.current = layer
+                    layer.current = True
                     print(f"[LAYER] Set current layer to: {layer_name}")
                     break
 
