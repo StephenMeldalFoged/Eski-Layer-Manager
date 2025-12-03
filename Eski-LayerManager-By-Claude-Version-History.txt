@@ -7,7 +7,7 @@ This file tracks features added in each version to help jump back to specific ve
 
 Version 0.1.0 (Initial Setup)
 Date: 2025-12-03
-Git Tag: v0.1.0 (to be created)
+Git Tag: v0.1.0
 
 Features:
 - Repository initialized
@@ -16,13 +16,34 @@ Features:
 
 ---
 
+Version 0.2.0 (Basic Dockable Window)
+Date: 2025-12-03
+Git Tag: v0.2.0 (to be created)
+
+Features:
+- Created eski-layer-manager.py main script
+- Implemented QDockWidget-based dockable window
+- Window title: "Eski LayerManager by Claude 0.2.0"
+- Connection to 3ds Max main window via qtmax.GetQMaxMainWindow()
+- Dockable to left and right sides only
+- Window set to dock right side by default
+- Placeholder UI with empty shell
+- Proper window flags and cleanup on close
+- show_layer_manager() function to launch from 3ds Max
+- Standalone testing capability outside 3ds Max
+
+Usage in 3ds Max:
+  import eski_layer_manager
+  eski_layer_manager.show_layer_manager()
+
+---
+
 FUTURE VERSIONS
 ===============
 
-Version 0.2.0 (Planned)
-- Basic dockable window with PySide6
-- Connection to 3ds Max main window
-- Empty UI shell
+Version 0.3.0 (Planned)
+- Layer list display
+- Basic layer information (name, status)
 
 Version 0.3.0 (Planned)
 - Layer list display
