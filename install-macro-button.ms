@@ -3,7 +3,7 @@
 
 (
     -- Version of the installer
-    local installerVersion = "0.2.0"
+    local installerVersion = "0.3.5"
 
     -- Function to check if macro file exists
     fn macroExists = (
@@ -142,11 +142,11 @@
         macroCode += "        python.Execute (\"scripts_dir = r'\" + scriptsDir + \"'\")\n"
         macroCode += "        python.Execute \"if scripts_dir not in sys.path: sys.path.insert(0, scripts_dir)\"\n"
         macroCode += "        \n"
-        macroCode += "        -- Reload the module in case it was updated\n"
-        macroCode += "        python.Execute \"if 'eski_layer_manager' in sys.modules: importlib.reload(sys.modules['eski_layer_manager'])\"\n"
-        macroCode += "        \n"
-        macroCode += "        -- Import and show the layer manager\n"
+        macroCode += "        -- Import module ONCE (preserves singleton pattern)\n"
+        macroCode += "        -- The module has guards to prevent re-initialization\n"
         macroCode += "        python.Execute \"import eski_layer_manager\"\n"
+        macroCode += "        \n"
+        macroCode += "        -- Show the layer manager (singleton pattern ensures only one instance)\n"
         macroCode += "        python.Execute \"eski_layer_manager.show_layer_manager()\"\n"
         macroCode += "    ) catch (\n"
         macroCode += "        messageBox \"ERROR: Cannot find eski-layer-manager.py\\n\\nPlease make sure eski-layer-manager.py is copied to:\\n\" + (getDir #userScripts) + \"\\n\\nSee README.md for installation instructions.\" title:\"Eski Layer Manager - File Not Found\"\n"
@@ -173,10 +173,10 @@
     )
 
     -- Create the installer dialog
-    rollout eskiInstallerDialog "Eski Layer Manager Installer" width:400 height:300 (
+    rollout eskiInstallerDialog "Eski Layer Manager Installer v0.3.5" width:400 height:300 (
 
         label lblTitle "Eski Layer Manager - Macro Button Setup" align:#center style_sunkenedge:true offset:[0,10]
-        label lblVersion "Installer Version: 0.2.0" align:#center offset:[0,5]
+        label lblVersion "Installer Version: 0.3.5" align:#center offset:[0,5]
 
         groupBox grpStatus "Current Status" pos:[10,60] width:380 height:120
         editText lblStatus "" pos:[20,80] width:360 height:90 align:#left readOnly:true
