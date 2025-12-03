@@ -129,7 +129,7 @@
         macroCode += "    category:\"Eski Tools\"\n"
         macroCode += "    buttonText:\"Eski\\nLayers\"\n"
         macroCode += "    toolTip:\"Eski Layer Manager by Claude v" + installerVersion + "\"\n"
-        macroCode += "    icon:#(\"Schematic\",1)\n"
+        macroCode += "    icon:#(\"AnimLayerToolbar\",10)\n"
         macroCode += "(\n"
         macroCode += "    -- This macro button launches the Eski Layer Manager\n"
         macroCode += "    try (\n"
