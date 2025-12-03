@@ -1,0 +1,169 @@
+ESKI LAYER MANAGER - SESSION REMINDER
+======================================
+
+Date: 2025-12-03
+Current Version: 0.5.0
+
+
+WHERE WE LEFT OFF
+=================
+
+Working on: VISIBILITY TOGGLE ICONS (eye icon feature)
+
+Status: TROUBLESHOOTING - Icons not displaying in tree widget
+
+Last Test Result: Version 0.4.19
+- User reported: Neither native icons NOR Unicode fallback icons are showing
+- This suggests a rendering/display issue with the tree widget column, not just icon loading
+
+
+WHAT WAS TRIED (v0.4.15 - v0.4.19)
+==================================
+
+Attempt 1 (v0.4.15): Native icon loading via Qt resource system
+- Tried LoadMaxMultiResIcon() from qtmax
+- Tried Qt resource paths with ":/" syntax
+- Result: Icons didn't load
+
+Attempt 2 (v0.4.16): Icon path variations
+- Tried multiple icon path candidates (SceneExplorer, LayerExplorer, MainUI, Visibility)
+- Result: Still no icons showing
+
+Attempt 3 (v0.4.17): Increased column width
+- Changed column width from 30px to wider
+- Result: Icons still not showing
+
+Attempt 4 (v0.4.18): Made area bigger
+- Column width: 50px
+- Icon size: 20x20
+- Font size: 14pt for Unicode
+- Result: NEITHER native icons NOR Unicode showing
+
+Attempt 5 (v0.4.19): Fixed column header and alignment
+- Changed column header from "" (empty) to "V"
+- Added center alignment for icon column
+- Icon size reduced to 16x16 (standard)
+- Added uniform row heights
+- Made Unicode text bold with 12pt font
+- Added header stretch settings
+- Result: NOT YET TESTED BY USER
+
+
+CURRENT CODE STATE (v0.4.19)
+=============================
+
+Tree widget setup:
+```python
+self.layer_tree.setHeaderLabels(["V", "Layer Name"])
+self.layer_tree.setColumnWidth(0, 40)
+self.layer_tree.header().setStretchLastSection(True)
+self.layer_tree.setIconSize(QtCore.QSize(16, 16))
+self.layer_tree.setUniformRowHeights(True)
+```
+
+Populate with Unicode fallback:
+```python
+icon_text = "👁" if not is_hidden else "✖"
+item = QtWidgets.QTreeWidgetItem(self.layer_tree, [icon_text, layer_name])
+item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+font = item.font(0)
+font.setPointSize(12)
+font.setBold(True)
+item.setFont(0, font)
+```
+
+User's chosen icons: Option 4 from icon-options.txt
+- Visible: 👁 (eye)
+- Hidden: ✖ (heavy X)
+
+
+NEXT STEPS FOR NEXT SESSION
+============================
+
+1. IMMEDIATE: Test v0.4.19 to see if column header fix resolved the issue
+
+2. IF STILL NOT SHOWING: Investigate deeper
+   - Check if column 0 is being hidden or collapsed by 3ds Max UI
+   - Try custom item delegate for rendering
+   - Try HTML rich text approach
+   - Add debug output to verify setText/setIcon is being called
+   - Check if 3ds Max's Qt integration has special requirements
+
+3. IF ICONS NOW SHOWING: Move to next feature from wishlist.txt:
+   - Feature #2: Quick object selection by layer
+   - Feature #3: Drag-and-drop object assignment
+   - Feature #1: Isolation mode for visibility
+   - Feature #4: Layer hierarchy
+   - Feature #5: Search/filter
+
+
+WORKING FEATURES (v0.5.0)
+==========================
+
+✓ Dockable window (left/right)
+✓ Live layer list with auto-refresh
+✓ Click layer name to set as active/current
+✓ Double-click layer name for inline rename
+✓ Right-click context menu with rename option
+✓ Scene change detection (auto-reopen window)
+✓ Window position memory (per-scene + global)
+✓ Hot-reload installer workflow (no Max restart needed)
+✓ Non-modal installer window
+✓ Auto-launch after upgrade
+✓ Singleton pattern (one instance only)
+✓ Layer creation/deletion/change callbacks
+✓ Two-column tree (icon column + name column)
+✓ Click icon column to toggle visibility (code ready, icons not rendering)
+
+
+KNOWN ISSUES
+============
+
+1. Visibility icons not rendering (v0.4.18 test showed neither native nor Unicode)
+   - Root cause unknown - possibly Qt/3ds Max integration issue
+   - May need custom rendering approach
+
+2. Native 3ds Max icons not accessible via standard Qt methods
+   - LoadMaxMultiResIcon() didn't work
+   - Qt resource paths (":/ ") didn't work
+   - May need to extract icons from 3ds Max resources manually
+
+
+INSTALLER WORKFLOW
+==================
+
+Current workflow (as of v0.4.11):
+1. Keep installer window open (non-modal)
+2. Click "Install / Upgrade to Latest Version"
+3. Installer automatically:
+   - Closes old Layer Manager window
+   - Copies Python file
+   - Reloads Python module (importlib.reload)
+   - Installs/updates macro
+   - Launches new version automatically
+4. Test immediately without Max restart
+
+This workflow is WORKING WELL and should be maintained.
+
+
+DEVELOPMENT NOTES
+=================
+
+- User prefers NOT to commit unless explicitly asked
+- User says "commit push" when ready
+- Version numbers increment with each feature/fix
+- User gives immediate "it works" / "it did not work" feedback
+- Use listener output for debugging
+- NEVER restart 3ds Max during development
+
+
+IMPORTANT REMINDERS
+===================
+
+- DO NOT commit/push unless user says "commit push"
+- DO NOT use importlib.reload() in the macro button (only in installer)
+- DO use separate try/except blocks for pymxs and MaxPlus imports
+- DO disconnect signals before populate_layers() and reconnect after
+- DO block signals during setFlags() operations
+- DO use layer.current = True (not layer_manager.current = layer)
+- DO save position to both scene fileProperties and global INI
