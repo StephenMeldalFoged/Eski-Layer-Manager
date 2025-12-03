@@ -1,0 +1,45 @@
+VERSION HISTORY - Eski Layer Manager
+=====================================
+
+This file tracks features added in each version to help jump back to specific versions if needed.
+
+---
+
+Version 0.1.0 (Initial Setup)
+Date: 2025-12-03
+Git Tag: v0.1.0 (to be created)
+
+Features:
+- Repository initialized
+- Basic project structure established
+- Technology decision: Python with PySide6 for UI, pymxs for 3ds Max API access
+
+---
+
+FUTURE VERSIONS
+===============
+
+Version 0.2.0 (Planned)
+- Basic dockable window with PySide6
+- Connection to 3ds Max main window
+- Empty UI shell
+
+Version 0.3.0 (Planned)
+- Layer list display
+- Basic layer information (name, status)
+
+Version 0.4.0 (Planned)
+- Object list per layer
+- Layer selection functionality
+
+Version 0.5.0 (Planned)
+- Layer management operations (create, delete, rename)
+- Object assignment to layers
+
+---
+
+HOW TO JUMP TO A VERSION:
+1. View available tags: git tag
+2. Jump to a version: git checkout v0.1.0
+3. Return to latest: git checkout main
+4. Create a new tag: git tag -a v0.2.0 -m "Description"
