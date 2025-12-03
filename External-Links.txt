@@ -1,0 +1,124 @@
+ESKI LAYER MANAGER - EXTERNAL LINKS & REFERENCES
+=================================================
+
+This document contains all external links and references used during the development
+of the Eski Layer Manager for 3ds Max 2026.
+
+
+OFFICIAL AUTODESK 3DS MAX DOCUMENTATION
+========================================
+
+Main Developer Help:
+https://help.autodesk.com/view/MAXDEV/2024/ENU/
+
+Layer Manager API Reference:
+https://help.autodesk.com/view/MAXDEV/2024/ENU/?guid=GUID-layerManager
+
+Layer Properties and Methods:
+https://help.autodesk.com/view/MAXDEV/2024/ENU/?guid=GUID-layer_properties
+
+Icon Resource Guide (Dark/Light Theme Icons):
+https://help.autodesk.com/view/MAXDEV/2024/ENU/?guid=Max_Developer_Help_icon_guide_icon_resource_guide_html
+
+Layer Explorer Native UI:
+https://help.autodesk.com/view/3DSMAX/2024/ENU/?guid=GUID-layer_explorer
+
+
+QT/PYSIDE6 DOCUMENTATION
+========================
+
+PySide6 Official Documentation:
+https://doc.qt.io/qtforpython-6/
+
+QTreeWidget Documentation:
+https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QTreeWidget.html
+
+QTreeWidgetItem Documentation:
+https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QTreeWidgetItem.html
+
+Qt Resource System:
+https://doc.qt.io/qt-6/resources.html
+
+QIcon Documentation:
+https://doc.qt.io/qtforpython-6/PySide6/QtGui/QIcon.html
+
+
+3DS MAX PYTHON API
+==================
+
+pymxs Documentation:
+https://help.autodesk.com/view/MAXDEV/2024/ENU/?guid=GUID-pymxs_introduction
+
+Python in 3ds Max:
+https://help.autodesk.com/view/MAXDEV/2024/ENU/?guid=GUID-python_in_max
+
+MAXScript Callbacks:
+https://help.autodesk.com/view/MAXDEV/2024/ENU/?guid=GUID-callbacks
+
+
+MAXSCRIPT REFERENCE
+===================
+
+MacroScript Documentation:
+https://help.autodesk.com/view/MAXDEV/2024/ENU/?guid=GUID-macroscripts
+
+File Properties (Scene Data Storage):
+https://help.autodesk.com/view/MAXDEV/2024/ENU/?guid=GUID-fileProperties
+
+INI File Settings:
+https://help.autodesk.com/view/MAXDEV/2024/ENU/?guid=GUID-ini_file_access
+
+
+COMMUNITY RESOURCES & FORUMS
+=============================
+
+3ds Max forums on Tech-Artists.org:
+https://www.tech-artists.org
+
+Autodesk 3ds Max Forums:
+https://forums.autodesk.com/t5/3ds-max-forum/bd-p/area-c-autodesk-3ds-max
+
+ScriptSpot (3ds Max Scripts Repository):
+https://www.scriptspot.com
+
+
+DEPRECATED APIS
+===============
+
+MaxPlus (Deprecated in 3ds Max 2023+):
+https://help.autodesk.com/view/MAXDEV/2022/ENU/?guid=GUID-maxplus_introduction
+Note: No longer available in 3ds Max 2023 and later. Use pymxs instead.
+
+
+PYTHON LIBRARIES
+================
+
+importlib.reload() Documentation:
+https://docs.python.org/3/library/importlib.html#importlib.reload
+
+
+RELATED TOOLS & INSPIRATION
+============================
+
+Native 3ds Max Layer Manager:
+Built-in tool accessed via: Main Menu > General > Layers > Layer Manager
+
+Native 3ds Max Scene Explorer:
+Built-in tool with layer filtering and visibility controls
+
+
+GITHUB REPOSITORY
+=================
+
+Eski Layer Manager Repository:
+https://github.com/StephenMeldalFoged/Eski-Layer-Manager
+
+
+NOTES
+=====
+
+- All Autodesk links reference 2024 documentation as it's the most stable reference
+- 3ds Max 2026 API is compatible with 2024 documentation
+- MaxPlus has been fully deprecated and replaced by pymxs
+- Qt resource system paths use ":/" prefix for internal resources
+- Unicode emoji support varies by system font configuration
