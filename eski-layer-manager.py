@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.4.1
+Version: 0.4.2
 """
 
 from PySide6 import QtWidgets, QtCore
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -98,6 +98,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree = QtWidgets.QTreeWidget()
         self.layer_tree.setHeaderLabel("Layer Hierarchy")
         self.layer_tree.setAlternatingRowColors(True)
+        self.layer_tree.itemClicked.connect(self.on_layer_selected)
         top_layout.addWidget(self.layer_tree)
 
         # Bottom section - will contain object list
@@ -174,6 +175,36 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             error_msg = f"Error loading layers: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
             QtWidgets.QTreeWidgetItem(self.layer_tree, [error_msg])
+
+    def on_layer_selected(self, item, column):
+        """Handle layer selection - make the selected layer active in 3ds Max"""
+        if rt is None:
+            return
+
+        try:
+            # Get the layer name from the tree item
+            layer_name = item.text(0)
+
+            # Don't process test mode items
+            if layer_name.startswith("[TEST MODE]"):
+                return
+
+            # Find the layer in 3ds Max by name
+            layer_manager = rt.layerManager
+            layer_count = layer_manager.count
+
+            for i in range(layer_count):
+                layer = layer_manager.getLayer(i)
+                if layer and str(layer.name) == layer_name:
+                    # Set this layer as the current layer
+                    layer_manager.current = layer
+                    print(f"[LAYER] Set current layer to: {layer_name}")
+                    break
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Error setting active layer: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] {error_msg}")
 
     def showEvent(self, event):
         """Handle show event - refresh layers when window is shown"""
