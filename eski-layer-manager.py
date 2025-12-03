@@ -2,10 +2,10 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.4.12
+Version: 0.4.19
 """
 
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 
 # Import pymxs (required for 3ds Max API access)
 try:
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.4.12"
+VERSION = "0.4.18"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -71,11 +71,58 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Track layer names before editing to detect renames
         self.editing_layer_name = None
 
+        # Load native 3ds Max icons for visibility
+        self.load_visibility_icons()
+
         # Initialize UI
         self.init_ui()
 
         # Restore window position
         self.restore_position()
+
+    def load_visibility_icons(self):
+        """Load native 3ds Max visibility icons using Qt resource system"""
+        self.icon_visible = None
+        self.icon_hidden = None
+        self.use_native_icons = False
+
+        # Try using qtmax.LoadMaxMultiResIcon first (official method)
+        try:
+            import qtmax
+            visible_icon = qtmax.LoadMaxMultiResIcon("SceneExplorer/Visible")
+            hidden_icon = qtmax.LoadMaxMultiResIcon("SceneExplorer/Hidden")
+
+            if visible_icon and not visible_icon.isNull() and hidden_icon and not hidden_icon.isNull():
+                self.icon_visible = visible_icon
+                self.icon_hidden = hidden_icon
+                self.use_native_icons = True
+                print("[ICONS] Loaded icons using LoadMaxMultiResIcon")
+                return
+        except Exception as e:
+            print(f"[ICONS] LoadMaxMultiResIcon failed: {e}")
+
+        # Try Qt resource system paths
+        icon_candidates = [
+            (":/SceneExplorer/Visible_16", ":/SceneExplorer/Hidden_16"),
+            (":/SceneExplorer/visible_16", ":/SceneExplorer/hidden_16"),
+            (":/LayerExplorer/Visible_16", ":/LayerExplorer/Hidden_16"),
+            (":/MainUI/Visible_16", ":/MainUI/Hidden_16"),
+            (":/Visibility/Visible_16", ":/Visibility/Hidden_16"),
+        ]
+
+        for visible_path, hidden_path in icon_candidates:
+            visible_icon = QtGui.QIcon(visible_path)
+            hidden_icon = QtGui.QIcon(hidden_path)
+
+            if not visible_icon.isNull() and not hidden_icon.isNull():
+                self.icon_visible = visible_icon
+                self.icon_hidden = hidden_icon
+                self.use_native_icons = True
+                print(f"[ICONS] Loaded Qt resource icons: {visible_path} / {hidden_path}")
+                return
+
+        # No native icons found - will use Unicode fallback
+        print("[ICONS] Native icons not found, using Unicode fallback")
 
     def init_ui(self):
         """Initialize the user interface"""
@@ -102,14 +149,22 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Create tree widget for layers
         self.layer_tree = QtWidgets.QTreeWidget()
-        self.layer_tree.setHeaderLabels(["", "Layer Name"])  # First column for icon, second for name
-        self.layer_tree.setColumnWidth(0, 30)  # Narrow column for icon
+        self.layer_tree.setHeaderLabels(["V", "Layer Name"])  # First column for visibility icon
+        self.layer_tree.setColumnWidth(0, 40)  # Icon column width
+        self.layer_tree.header().setStretchLastSection(True)  # Make name column stretch
         self.layer_tree.setAlternatingRowColors(True)
         self.layer_tree.itemClicked.connect(self.on_layer_clicked)
         self.layer_tree.itemDoubleClicked.connect(self.on_layer_double_clicked)
         self.layer_tree.itemChanged.connect(self.on_layer_renamed)
         self.layer_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.layer_tree.customContextMenuRequested.connect(self.on_layer_context_menu)
+
+        # Set icon size larger for better visibility
+        self.layer_tree.setIconSize(QtCore.QSize(16, 16))
+
+        # Set uniform row heights for better icon display
+        self.layer_tree.setUniformRowHeights(True)
+
         top_layout.addWidget(self.layer_tree)
 
         # Bottom section - will contain object list
@@ -186,12 +241,24 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     layer_name = str(layer.name)
                     is_hidden = layer.ishidden
 
-                    # Choose icon based on visibility
-                    icon = "👁" if not is_hidden else "⊗"
-
                     print(f"[DEBUG] Layer {i}: '{layer_name}', hidden={is_hidden}")
+
                     # Add to tree with icon in first column, name in second
-                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, [icon, layer_name])
+                    if self.use_native_icons:
+                        # Use native icons
+                        item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["", layer_name])
+                        item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
+                        item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+                    else:
+                        # Unicode fallback with larger font and center alignment
+                        icon_text = "👁" if not is_hidden else "✖"
+                        item = QtWidgets.QTreeWidgetItem(self.layer_tree, [icon_text, layer_name])
+                        item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+                        # Make icon text larger and bold
+                        font = item.font(0)
+                        font.setPointSize(12)
+                        font.setBold(True)
+                        item.setFont(0, font)
 
         except Exception as e:
             # If layer access fails, show error
@@ -246,9 +313,14 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     # Toggle visibility
                     layer.ishidden = not layer.ishidden
 
-                    # Update icon
-                    new_icon = "⊗" if layer.ishidden else "👁"
-                    item.setText(0, new_icon)
+                    # Update icon (native if available, Unicode fallback otherwise)
+                    if self.use_native_icons:
+                        item.setIcon(0, self.icon_hidden if layer.ishidden else self.icon_visible)
+                        item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+                    else:
+                        new_icon_text = "✖" if layer.ishidden else "👁"
+                        item.setText(0, new_icon_text)
+                        item.setTextAlignment(0, QtCore.Qt.AlignCenter)
 
                     status = "hidden" if layer.ishidden else "visible"
                     print(f"[LAYER] Set layer '{layer_name}' to {status}")

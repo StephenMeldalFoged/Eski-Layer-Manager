@@ -1,0 +1,41 @@
+EYE AND VISIBILITY ICON OPTIONS
+================================
+
+Choose a number for the icon pair you want:
+
+Eye-based icons:
+1.  👁 / 👁‍🗨  (eye / eye in speech bubble)
+2.  👁 / ⊗   (eye / circled X)
+3.  👁 / ✕   (eye / X mark)
+4.  👁 / ✖   (eye / heavy X)
+5.  👀 / ⊗   (eyes / circled X)
+
+Circle-based icons (current):
+6.  ● / ○   (filled circle / hollow circle) [CURRENT]
+7.  ◉ / ○   (fisheye / hollow circle)
+8.  ⦿ / ○   (circled dot / hollow circle)
+9.  🔘 / ⚪  (radio button / white circle)
+10. ⚫ / ⚪  (black circle / white circle)
+
+Check/X based icons:
+11. ✓ / ✕   (checkmark / X)
+12. ✔ / ✖   (heavy check / heavy X)
+13. ☑ / ☐   (checked box / empty box)
+14. ✅ / ❌  (check button / X button)
+
+Other visibility icons:
+15. ▣ / ▢   (filled square / hollow square)
+16. ◼ / ◻   (filled square / hollow square alt)
+17. ▪ / ▫   (small filled square / small hollow square)
+18. ► / ▷   (filled triangle / hollow triangle)
+19. + / -   (plus / minus)
+20. ∙ / ∘   (bullet / ring)
+
+Custom combinations:
+21. 👁 / 🚫  (eye / no entry)
+22. ◉ / ⊘   (fisheye / circled slash)
+23. ● / ×   (filled circle / X)
+24. ◆ / ◇   (filled diamond / hollow diamond)
+25. ▲ / △   (filled triangle / hollow triangle)
+
+Enter the number of your choice (1-25):

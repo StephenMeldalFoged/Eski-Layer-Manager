@@ -12,7 +12,8 @@
       "Bash(python -m py_compile:*)",
       "WebFetch(domain:forums.autodesk.com)",
       "WebFetch(domain:knowledge.autodesk.com)",
-      "WebFetch(domain:www.scriptspot.com)"
+      "WebFetch(domain:www.scriptspot.com)",
+      "WebFetch(domain:mayoi.me)"
     ],
     "deny": [],
     "ask": []
