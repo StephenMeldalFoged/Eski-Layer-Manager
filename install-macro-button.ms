@@ -3,7 +3,7 @@
 
 (
     -- Version of the installer
-    local installerVersion = "0.3.5"
+    local installerVersion = "0.4.0"
 
     -- Function to check if macro file exists
     fn macroExists = (
@@ -173,10 +173,10 @@
     )
 
     -- Create the installer dialog
-    rollout eskiInstallerDialog "Eski Layer Manager Installer v0.3.5" width:400 height:300 (
+    rollout eskiInstallerDialog "Eski Layer Manager Installer v0.4.0" width:400 height:300 (
 
         label lblTitle "Eski Layer Manager - Macro Button Setup" align:#center style_sunkenedge:true offset:[0,10]
-        label lblVersion "Installer Version: 0.3.5" align:#center offset:[0,5]
+        label lblVersion "Installer Version: 0.4.0" align:#center offset:[0,5]
 
         groupBox grpStatus "Current Status" pos:[10,60] width:380 height:120
         editText lblStatus "" pos:[20,80] width:360 height:90 align:#left readOnly:true
