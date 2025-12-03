@@ -3,7 +3,7 @@
 
 (
     -- Version of the installer
-    local installerVersion = "0.4.10"
+    local installerVersion = "0.4.11"
 
     -- Function to check if macro file exists
     fn macroExists = (
@@ -204,10 +204,10 @@
     )
 
     -- Create the installer dialog
-    rollout eskiInstallerDialog "Eski Layer Manager Installer v0.4.10" width:400 height:600 (
+    rollout eskiInstallerDialog "Eski Layer Manager Installer v0.4.11" width:400 height:600 (
 
         label lblTitle "Eski Layer Manager - Macro Button Setup" align:#center style_sunkenedge:true offset:[0,10]
-        label lblVersion "Installer Version: 0.4.10" align:#center offset:[0,5]
+        label lblVersion "Installer Version: 0.4.11" align:#center offset:[0,5]
 
         groupBox grpStatus "Current Status" pos:[10,60] width:380 height:420
         editText lblStatus "" pos:[20,80] width:360 height:390 align:#left readOnly:true
@@ -275,15 +275,23 @@
 
             -- Close any existing Layer Manager window before upgrade
             try (
-                python.Execute "import sys"
-                python.Execute "if 'eski_layer_manager' in sys.modules:"
-                python.Execute "    import eski_layer_manager"
-                python.Execute "    if hasattr(eski_layer_manager, '_layer_manager_instance') and eski_layer_manager._layer_manager_instance[0] is not None:"
-                python.Execute "        try:"
-                python.Execute "            eski_layer_manager._layer_manager_instance[0].close()"
-                python.Execute "        except: pass"
+                local closeScript = "
+import sys
+if 'eski_layer_manager' in sys.modules:
+    import eski_layer_manager
+    if hasattr(eski_layer_manager, '_layer_manager_instance') and eski_layer_manager._layer_manager_instance[0] is not None:
+        try:
+            if eski_layer_manager._layer_manager_instance[0].isVisible():
+                eski_layer_manager._layer_manager_instance[0].close()
+                print('[INSTALLER] Closed existing Layer Manager window')
+        except Exception as e:
+            print('[INSTALLER] Could not close window: ' + str(e))
+"
+                python.Execute closeScript
                 statusText += "✓ Closed existing Layer Manager window\n"
-            ) catch ()
+            ) catch (
+                format "[INSTALLER] Error closing window: %\n" (getCurrentException())
+            )
 
             -- First, try to copy the Python script
             local copyResult = copyPythonScript()
@@ -300,11 +308,13 @@
             )
 
             -- Reload the Python module to pick up changes
+            local reloadSuccess = false
             if pythonCopied then (
                 try (
                     python.Execute "import importlib"
                     python.Execute "if 'eski_layer_manager' in sys.modules: importlib.reload(sys.modules['eski_layer_manager'])"
                     statusText += "✓ Python module reloaded\n\n"
+                    reloadSuccess = true
                 ) catch (
                     statusText += "⚠ Could not reload Python module\n\n"
                 )
@@ -323,8 +333,20 @@
                     statusText += "Installed Version: " + installedVersion + "\n"
                     statusText += "Category: Eski Tools\n"
                     statusText += "Button Name: EskiLayerManager\n\n"
-                    statusText += "Changes are live! Click your toolbar button\n"
-                    statusText += "to launch the updated Layer Manager.\n"
+
+                    -- Launch the new version if reload was successful
+                    if reloadSuccess then (
+                        try (
+                            python.Execute "import eski_layer_manager; eski_layer_manager.show_layer_manager()"
+                            statusText += "✓ Layer Manager launched with new version!\n"
+                        ) catch (
+                            statusText += "Changes are live! Click your toolbar button\n"
+                            statusText += "to launch the updated Layer Manager.\n"
+                        )
+                    ) else (
+                        statusText += "Changes are live! Click your toolbar button\n"
+                        statusText += "to launch the updated Layer Manager.\n"
+                    )
                 ) else (
                     statusText += "✓ Macro button INSTALLED successfully!\n\n"
                     statusText += "Installed Version: " + installedVersion + "\n"
@@ -385,6 +407,6 @@
         )
     )
 
-    -- Show the dialog
-    createDialog eskiInstallerDialog modal:true
+    -- Show the dialog (non-modal so it doesn't block the UI)
+    createDialog eskiInstallerDialog modal:false
 )

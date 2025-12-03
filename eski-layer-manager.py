@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.4.10
+Version: 0.4.11
 """
 
 from PySide6 import QtWidgets, QtCore
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.4.10"
+VERSION = "0.4.11"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -73,6 +73,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Initialize UI
         self.init_ui()
+
+        # Restore window position
+        self.restore_position()
 
     def init_ui(self):
         """Initialize the user interface"""
@@ -372,8 +375,78 @@ fn EskiLayerManagerSceneCallback = (
         except Exception as e:
             print(f"[CALLBACKS] Failed to remove callbacks: {e}")
 
+    def save_position(self):
+        """Save window position to 3ds Max scene and global settings"""
+        if rt is None:
+            return
+
+        try:
+            # Get current position and docking state
+            is_floating = self.isFloating()
+            pos = self.pos()
+            size = self.size()
+
+            # Save to scene file data
+            position_data = f"{is_floating};{pos.x()};{pos.y()};{size.width()};{size.height()}"
+            rt.fileProperties.addProperty(rt.Name("EskiLayerManagerPosition"), position_data)
+
+            # Also save to global preferences (INI-like storage)
+            rt.setINISetting(rt.maxFilePath + rt.maxFileName + ".ini", "EskiLayerManager", "LastPosition", position_data)
+
+            print(f"[POSITION] Saved: {position_data}")
+        except Exception as e:
+            print(f"[POSITION] Error saving: {e}")
+
+    def restore_position(self):
+        """Restore window position from scene or global settings"""
+        if rt is None:
+            return
+
+        try:
+            position_data = None
+
+            # First try to load from scene file
+            try:
+                position_data = rt.fileProperties.findProperty(rt.Name("EskiLayerManagerPosition"))
+                if position_data:
+                    position_data = str(position_data.value)
+                    print(f"[POSITION] Loaded from scene: {position_data}")
+            except:
+                pass
+
+            # If not in scene, try global preferences
+            if not position_data:
+                try:
+                    position_data = rt.getINISetting(rt.maxFilePath + rt.maxFileName + ".ini", "EskiLayerManager", "LastPosition")
+                    if position_data and position_data != "":
+                        print(f"[POSITION] Loaded from global: {position_data}")
+                except:
+                    pass
+
+            # Parse and apply position data
+            if position_data:
+                parts = position_data.split(";")
+                if len(parts) == 5:
+                    is_floating = parts[0] == "True"
+                    x = int(parts[1])
+                    y = int(parts[2])
+                    width = int(parts[3])
+                    height = int(parts[4])
+
+                    # Apply position
+                    self.move(x, y)
+                    self.resize(width, height)
+                    self.setFloating(is_floating)
+
+                    print(f"[POSITION] Restored position")
+        except Exception as e:
+            print(f"[POSITION] Error restoring: {e}")
+
     def closeEvent(self, event):
         """Handle close event"""
+        # Save position before closing
+        self.save_position()
+
         # Remove callbacks
         self.remove_callbacks()
 
