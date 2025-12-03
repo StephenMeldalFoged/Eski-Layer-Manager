@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.4.0
+Version: 0.4.1
 """
 
 from PySide6 import QtWidgets, QtCore
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -63,6 +63,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Set allowed dock areas (left and right as requested)
         self.setAllowedAreas(QtCore.Qt.LeftDockWidgetArea | QtCore.Qt.RightDockWidgetArea)
+
+        # Setup callback for automatic refresh
+        self.callback_id = None
+        self.setup_callbacks()
 
         # Initialize UI
         self.init_ui()
@@ -177,12 +181,72 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Refresh layers when window is shown
         self.populate_layers()
 
+    def setup_callbacks(self):
+        """Setup 3ds Max callbacks for automatic layer refresh"""
+        if rt is None:
+            return
+
+        try:
+            # Create a callback function that will refresh the layers
+            callback_code = """
+global EskiLayerManagerCallback
+fn EskiLayerManagerCallback = (
+    python.Execute "import eski_layer_manager; eski_layer_manager.refresh_from_callback()"
+)
+"""
+            rt.execute(callback_code)
+
+            # Register callbacks for layer-related events
+            # layerCreated, layerDeleted, layerRenamed
+            self.callback_id = rt.callbacks.addScript(rt.Name("layerCreated"), "EskiLayerManagerCallback()")
+            rt.callbacks.addScript(rt.Name("layerDeleted"), "EskiLayerManagerCallback()")
+            rt.callbacks.addScript(rt.Name("nodeLayerChanged"), "EskiLayerManagerCallback()")
+
+            print("[CALLBACKS] Layer change callbacks registered")
+        except Exception as e:
+            print(f"[CALLBACKS] Failed to register callbacks: {e}")
+
+    def remove_callbacks(self):
+        """Remove 3ds Max callbacks"""
+        if rt is None:
+            return
+
+        try:
+            # Remove all instances of our callback
+            rt.callbacks.removeScripts(rt.Name("layerCreated"), id=rt.Name("EskiLayerManagerCallback"))
+            rt.callbacks.removeScripts(rt.Name("layerDeleted"), id=rt.Name("EskiLayerManagerCallback"))
+            rt.callbacks.removeScripts(rt.Name("nodeLayerChanged"), id=rt.Name("EskiLayerManagerCallback"))
+            print("[CALLBACKS] Layer change callbacks removed")
+        except Exception as e:
+            print(f"[CALLBACKS] Failed to remove callbacks: {e}")
+
     def closeEvent(self, event):
         """Handle close event"""
+        # Remove callbacks
+        self.remove_callbacks()
+
         # Clear the global instance reference
         global _layer_manager_instance
         _layer_manager_instance[0] = None
         super().closeEvent(event)
+
+
+def refresh_from_callback():
+    """
+    Called by 3ds Max callbacks when layer changes occur
+    Refreshes the layer list in the active instance
+    """
+    global _layer_manager_instance
+
+    if _layer_manager_instance[0] is not None:
+        try:
+            # Check if widget is still valid
+            _layer_manager_instance[0].isVisible()
+            # Refresh the layers
+            _layer_manager_instance[0].populate_layers()
+        except (RuntimeError, AttributeError):
+            # Widget was deleted
+            _layer_manager_instance[0] = None
 
 
 def get_instance_status():
