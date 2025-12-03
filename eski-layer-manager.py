@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.4.11
+Version: 0.4.12
 """
 
 from PySide6 import QtWidgets, QtCore
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.4.11"
+VERSION = "0.4.12"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -102,9 +102,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Create tree widget for layers
         self.layer_tree = QtWidgets.QTreeWidget()
-        self.layer_tree.setHeaderLabel("Layer Hierarchy")
+        self.layer_tree.setHeaderLabels(["", "Layer Name"])  # First column for icon, second for name
+        self.layer_tree.setColumnWidth(0, 30)  # Narrow column for icon
         self.layer_tree.setAlternatingRowColors(True)
-        self.layer_tree.itemClicked.connect(self.on_layer_selected)
+        self.layer_tree.itemClicked.connect(self.on_layer_clicked)
         self.layer_tree.itemDoubleClicked.connect(self.on_layer_double_clicked)
         self.layer_tree.itemChanged.connect(self.on_layer_renamed)
         self.layer_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -161,9 +162,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         if rt is None:
             # Testing mode outside 3ds Max - add dummy data
             print("[POPULATE] rt is None - running in TEST MODE")
-            QtWidgets.QTreeWidgetItem(self.layer_tree, ["[TEST MODE] 0 (default)"])
-            QtWidgets.QTreeWidgetItem(self.layer_tree, ["[TEST MODE] Layer 1"])
-            QtWidgets.QTreeWidgetItem(self.layer_tree, ["[TEST MODE] Layer 2"])
+            item1 = QtWidgets.QTreeWidgetItem(self.layer_tree, ["👁", "[TEST MODE] 0 (default)"])
+            item2 = QtWidgets.QTreeWidgetItem(self.layer_tree, ["👁", "[TEST MODE] Layer 1"])
+            item3 = QtWidgets.QTreeWidgetItem(self.layer_tree, ["👁", "[TEST MODE] Layer 2"])
             # Reconnect signal
             self.layer_tree.itemChanged.connect(self.on_layer_renamed)
             return
@@ -181,11 +182,16 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             for i in range(layer_count):
                 layer = layer_manager.getLayer(i)
                 if layer:
-                    # Get the layer name directly
+                    # Get the layer name and visibility
                     layer_name = str(layer.name)
-                    print(f"[DEBUG] Layer {i}: '{layer_name}'")
-                    # Add to tree as flat list (no hierarchy)
-                    QtWidgets.QTreeWidgetItem(self.layer_tree, [layer_name])
+                    is_hidden = layer.ishidden
+
+                    # Choose icon based on visibility
+                    icon = "👁" if not is_hidden else "⊗"
+
+                    print(f"[DEBUG] Layer {i}: '{layer_name}', hidden={is_hidden}")
+                    # Add to tree with icon in first column, name in second
+                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, [icon, layer_name])
 
         except Exception as e:
             # If layer access fails, show error
@@ -197,19 +203,68 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Reconnect the itemChanged signal
         self.layer_tree.itemChanged.connect(self.on_layer_renamed)
 
-    def on_layer_selected(self, item, column):
-        """Handle layer selection - make the selected layer active in 3ds Max"""
+    def on_layer_clicked(self, item, column):
+        """Handle layer click - toggle visibility on icon column, set active on name column"""
         if rt is None:
             return
 
         try:
-            # Get the layer name from the tree item
-            layer_name = item.text(0)
+            # Get the layer name from the tree item (column 1)
+            layer_name = item.text(1)
 
             # Don't process test mode items
             if layer_name.startswith("[TEST MODE]"):
                 return
 
+            # Column 0 = icon (toggle visibility)
+            # Column 1 = name (set as current layer)
+            if column == 0:
+                # Toggle visibility
+                self.toggle_layer_visibility(item, layer_name)
+            elif column == 1:
+                # Set as current layer
+                self.set_current_layer(layer_name)
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Error handling layer click: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] {error_msg}")
+
+    def toggle_layer_visibility(self, item, layer_name):
+        """Toggle layer visibility (hide/unhide)"""
+        if rt is None:
+            return
+
+        try:
+            # Find the layer in 3ds Max by name
+            layer_manager = rt.layerManager
+            layer_count = layer_manager.count
+
+            for i in range(layer_count):
+                layer = layer_manager.getLayer(i)
+                if layer and str(layer.name) == layer_name:
+                    # Toggle visibility
+                    layer.ishidden = not layer.ishidden
+
+                    # Update icon
+                    new_icon = "⊗" if layer.ishidden else "👁"
+                    item.setText(0, new_icon)
+
+                    status = "hidden" if layer.ishidden else "visible"
+                    print(f"[LAYER] Set layer '{layer_name}' to {status}")
+                    break
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Error toggling layer visibility: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] {error_msg}")
+
+    def set_current_layer(self, layer_name):
+        """Set the layer as current/active in 3ds Max"""
+        if rt is None:
+            return
+
+        try:
             # Find the layer in 3ds Max by name
             layer_manager = rt.layerManager
             layer_count = layer_manager.count
@@ -231,13 +286,17 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         """Handle layer double-click - start inline rename"""
         print("[RENAME] Double-click detected")
 
+        # Only rename on column 1 (name column), not column 0 (icon)
+        if column != 1:
+            return
+
         # Don't process test mode items
-        if item.text(0).startswith("[TEST MODE]"):
+        if item.text(1).startswith("[TEST MODE]"):
             print("[RENAME] Skipping test mode item")
             return
 
         # Store the original name before editing
-        self.editing_layer_name = item.text(0)
+        self.editing_layer_name = item.text(1)
         print(f"[RENAME] Starting edit for layer: {self.editing_layer_name}")
 
         # Block signals while making item editable to avoid premature itemChanged trigger
@@ -245,8 +304,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
         self.layer_tree.blockSignals(False)
 
-        # Now start editing
-        self.layer_tree.editItem(item, 0)
+        # Now start editing (column 1 = name)
+        self.layer_tree.editItem(item, 1)
         print("[RENAME] Edit mode activated")
 
     def on_layer_context_menu(self, position):
@@ -263,20 +322,24 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         action = menu.exec(self.layer_tree.viewport().mapToGlobal(position))
 
         if action == rename_action:
-            # Trigger inline rename
-            self.on_layer_double_clicked(item, 0)
+            # Trigger inline rename on column 1 (name column)
+            self.on_layer_double_clicked(item, 1)
 
     def on_layer_renamed(self, item, column):
         """Handle layer rename after inline editing"""
-        print(f"[RENAME] on_layer_renamed called, editing_layer_name: {self.editing_layer_name}")
+        print(f"[RENAME] on_layer_renamed called, column: {column}, editing_layer_name: {self.editing_layer_name}")
+
+        # Only process renames on column 1 (name column)
+        if column != 1:
+            return
 
         if rt is None or self.editing_layer_name is None:
             print("[RENAME] Skipping - rt is None or not editing")
             return
 
         try:
-            # Get the new name from the item
-            new_name = item.text(0)
+            # Get the new name from the item (column 1)
+            new_name = item.text(1)
             old_name = self.editing_layer_name
 
             print(f"[RENAME] Old name: '{old_name}', New name: '{new_name}'")
