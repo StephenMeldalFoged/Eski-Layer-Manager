@@ -12,20 +12,36 @@
         return doesFileExist macroFile
     )
 
-    -- Function to uninstall existing macros
+    -- Function to uninstall existing macros and Python files
     fn uninstallMacro = (
+        local success = false
         try (
+            -- Delete macro file
             local macroDir = getDir #userMacros
             local macroFile = macroDir + "\\EskiLayerManager.mcr"
 
             if doesFileExist macroFile then (
                 deleteFile macroFile
-                macros.load()
-                return true
-            ) else (
-                return false
+                format "Deleted macro file: %\n" macroFile
+                success = true
             )
+
+            -- Delete Python file
+            local scriptsDir = getDir #userScripts
+            local pythonFile = scriptsDir + "\\eski_layer_manager.py"
+
+            if doesFileExist pythonFile then (
+                deleteFile pythonFile
+                format "Deleted Python file: %\n" pythonFile
+                success = true
+            )
+
+            -- Reload macros to update action manager
+            macros.load()
+
+            return success
         ) catch (
+            format "Error during uninstall: %\n" (getCurrentException())
             return false
         )
     )
@@ -222,17 +238,24 @@
         -- Uninstall button
         on btnUninstall pressed do (
             if macroExists() then (
-                if queryBox "Are you sure you want to UNINSTALL the Eski Layer Manager macro button?\n\nThis will remove it from the system.\n(You can reinstall anytime by running this script again)" title:"Confirm Uninstall" then (
+                if queryBox "Are you sure you want to UNINSTALL the Eski Layer Manager?\n\nThis will remove:\n- Macro button file (.mcr)\n- Python script file (.py)\n- Requires 3ds Max restart to fully clear actions\n\n(You can reinstall anytime by running this script again)" title:"Confirm Uninstall" then (
                     if uninstallMacro() then (
-                        local msg = "Macro button file REMOVED successfully!\n\nThe macro file has been deleted."
-                        msg += "\n\nIMPORTANT: The action may still be registered in 3ds Max's action manager.\n\nTo COMPLETELY remove it:\n1. Remove it from any toolbars (if present)\n2. Remove any keyboard shortcuts in:\n   Customize > Customize User Interface > Keyboard tab\n3. RESTART 3ds Max\n\nThe action will be fully cleared after restart."
+                        local msg = "Files REMOVED successfully!\n\n"
+                        msg += "✓ Macro button file deleted\n"
+                        msg += "✓ Python script deleted\n\n"
+                        msg += "NEXT STEPS - Complete Removal:\n\n"
+                        msg += "1. Close this dialog\n"
+                        msg += "2. Remove button from toolbars (if present)\n"
+                        msg += "3. Remove keyboard shortcuts (Customize > Keyboard tab)\n"
+                        msg += "4. RESTART 3ds Max\n\n"
+                        msg += "After restart, the action will be completely removed from\nthe Customize User Interface lists."
 
-                        messageBox msg title:"Uninstalled" beep:false
+                        messageBox msg title:"Uninstalled - Restart Required" beep:false
 
                         -- Update status
-                        lblStatus.text = "STATUS: Macro button is NOT installed\n\nNo macro found in 'Eski Tools' category"
+                        lblStatus.text = "STATUS: Files deleted - RESTART 3ds Max to complete removal\n\nMacro and Python files have been deleted"
                     ) else (
-                        messageBox "Uninstallation FAILED!\n\nCould not remove macro. It may not exist or permissions issue." title:"Error"
+                        messageBox "Uninstallation FAILED!\n\nCould not remove files. Check listener for details." title:"Error"
                     )
                 )
             ) else (
