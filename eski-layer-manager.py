@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.5.3"
+VERSION = "0.5.4"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -140,30 +140,51 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.use_native_icons = False
 
         # Try using qtmax.LoadMaxMultiResIcon first (official method)
+        # Priority order: StateSets > SceneExplorer > LayerExplorer
         try:
             import qtmax
-            visible_icon = qtmax.LoadMaxMultiResIcon("SceneExplorer/Visible")
-            hidden_icon = qtmax.LoadMaxMultiResIcon("SceneExplorer/Hidden")
 
-            if visible_icon and not visible_icon.isNull() and hidden_icon and not hidden_icon.isNull():
-                self.icon_visible = visible_icon
-                self.icon_hidden = hidden_icon
-                self.use_native_icons = True
-                # Debug: Check if icons actually have pixmap data
-                print(f"[ICONS] Loaded icons using LoadMaxMultiResIcon")
-                print(f"[ICONS] Visible icon: isNull={visible_icon.isNull()}, sizes={visible_icon.availableSizes()}")
-                print(f"[ICONS] Hidden icon: isNull={hidden_icon.isNull()}, sizes={hidden_icon.availableSizes()}")
-                # Try to get a pixmap to verify it has content
-                pixmap = visible_icon.pixmap(16, 16)
-                print(f"[ICONS] Visible pixmap 16x16: isNull={pixmap.isNull()}, size={pixmap.size()}")
-                return
+            # Try StateSets icons first (from icon resource guide)
+            icon_path_candidates = [
+                ("StateSets/Visible", "StateSets/Hidden"),
+                ("StateSets/visible", "StateSets/hidden"),
+                ("SceneExplorer/Visible", "SceneExplorer/Hidden"),
+                ("LayerExplorer/Visible", "LayerExplorer/Hidden"),
+            ]
+
+            for visible_path, hidden_path in icon_path_candidates:
+                try:
+                    visible_icon = qtmax.LoadMaxMultiResIcon(visible_path)
+                    hidden_icon = qtmax.LoadMaxMultiResIcon(hidden_path)
+
+                    if visible_icon and not visible_icon.isNull() and hidden_icon and not hidden_icon.isNull():
+                        # Check if icons have actual pixel data
+                        if len(visible_icon.availableSizes()) > 0 and len(hidden_icon.availableSizes()) > 0:
+                            self.icon_visible = visible_icon
+                            self.icon_hidden = hidden_icon
+                            self.use_native_icons = True
+                            print(f"[ICONS] Loaded icons using LoadMaxMultiResIcon: {visible_path} / {hidden_path}")
+                            print(f"[ICONS] Visible icon sizes={visible_icon.availableSizes()}")
+                            return
+                        else:
+                            print(f"[ICONS] Icons at {visible_path} have no pixel data")
+                except Exception as e:
+                    print(f"[ICONS] Failed to load {visible_path}: {e}")
+
         except Exception as e:
-            print(f"[ICONS] LoadMaxMultiResIcon failed: {e}")
+            print(f"[ICONS] LoadMaxMultiResIcon not available: {e}")
 
         # Try Qt resource system paths
         icon_candidates = [
+            # StateSets icons (priority from icon resource guide)
+            (":/StateSets/Visible_16", ":/StateSets/Hidden_16"),
+            (":/StateSets/visible_16", ":/StateSets/hidden_16"),
+            (":/StateSets/Visible", ":/StateSets/Hidden"),
+            (":/StateSets/visible", ":/StateSets/hidden"),
+            # SceneExplorer fallbacks
             (":/SceneExplorer/Visible_16", ":/SceneExplorer/Hidden_16"),
             (":/SceneExplorer/visible_16", ":/SceneExplorer/hidden_16"),
+            # Other fallbacks
             (":/LayerExplorer/Visible_16", ":/LayerExplorer/Hidden_16"),
             (":/MainUI/Visible_16", ":/MainUI/Hidden_16"),
             (":/Visibility/Visible_16", ":/Visibility/Hidden_16"),
