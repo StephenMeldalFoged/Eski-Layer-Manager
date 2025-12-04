@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.5.4"
+VERSION = "0.6.0"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -124,6 +124,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Track layer names before editing to detect renames
         self.editing_layer_name = None
 
+        # Track the last known current layer for sync detection
+        self.last_current_layer = None
+
+        # Track visibility states for sync detection {layer_name: is_hidden}
+        self.last_visibility_states = {}
+
         # Load native 3ds Max icons for visibility
         self.load_visibility_icons()
 
@@ -132,6 +138,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Restore window position
         self.restore_position()
+
+        # Setup timer to poll for current layer changes (fallback if callback doesn't work)
+        self.setup_sync_timer()
 
     def load_visibility_icons(self):
         """Load native 3ds Max visibility icons using Qt resource system"""
@@ -321,35 +330,54 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Get the layer manager from 3ds Max
             layer_manager = rt.layerManager
 
-            # Get all layers and add them to the list
+            # Get all layers and store their info
             layer_count = layer_manager.count
             print(f"[DEBUG] Found {layer_count} layers in scene")
 
+            # Collect all layer data first
+            layer_data = []
             for i in range(layer_count):
                 layer = layer_manager.getLayer(i)
                 if layer:
-                    # Get the layer name and visibility
-                    layer_name = str(layer.name)
-                    is_hidden = layer.ishidden
+                    layer_data.append({
+                        'name': str(layer.name),
+                        'hidden': layer.ishidden,
+                        'current': layer.current
+                    })
 
-                    print(f"[DEBUG] Layer {i}: '{layer_name}', hidden={is_hidden}")
+            # Sort layers alphabetically by name
+            layer_data.sort(key=lambda x: x['name'].lower())
+            print(f"[DEBUG] Sorted {len(layer_data)} layers alphabetically")
 
-                    # Add to tree with icon in first column, name in second
-                    if self.use_native_icons:
-                        # Use native icons
-                        item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["", layer_name])
-                        item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
-                        item.setTextAlignment(0, QtCore.Qt.AlignCenter)
-                    else:
-                        # Unicode fallback with larger font and center alignment
-                        icon_text = "👁" if not is_hidden else "✖"
-                        item = QtWidgets.QTreeWidgetItem(self.layer_tree, [icon_text, layer_name])
-                        item.setTextAlignment(0, QtCore.Qt.AlignCenter)
-                        # Make icon text larger and bold
-                        font = item.font(0)
-                        font.setPointSize(12)
-                        font.setBold(True)
-                        item.setFont(0, font)
+            # Now add sorted layers to tree
+            for data in layer_data:
+                layer_name = data['name']
+                is_hidden = data['hidden']
+                is_current = data['current']
+
+                print(f"[DEBUG] Layer: '{layer_name}', hidden={is_hidden}, current={is_current}")
+
+                # Add to tree with icon in first column, name in second
+                if self.use_native_icons:
+                    # Use native icons
+                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["", layer_name])
+                    item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
+                    item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+                else:
+                    # Unicode fallback with larger font and center alignment
+                    icon_text = "👁" if not is_hidden else "✖"
+                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, [icon_text, layer_name])
+                    item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+                    # Make icon text larger and bold
+                    font = item.font(0)
+                    font.setPointSize(12)
+                    font.setBold(True)
+                    item.setFont(0, font)
+
+                # Select the current/active layer
+                if is_current:
+                    item.setSelected(True)
+                    print(f"[POPULATE] Selected current layer: {layer_name}")
 
         except Exception as e:
             # If layer access fails, show error
@@ -360,6 +388,32 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Reconnect the itemChanged signal
         self.layer_tree.itemChanged.connect(self.on_layer_renamed)
+
+    def select_active_layer(self):
+        """Find and select the currently active layer in the tree"""
+        if rt is None:
+            return
+
+        try:
+            # Clear all existing selections first (only one layer can be active)
+            self.layer_tree.clearSelection()
+
+            # Get the current layer from 3ds Max
+            layer_manager = rt.layerManager
+            current_layer = layer_manager.current
+
+            if current_layer:
+                current_layer_name = str(current_layer.name)
+
+                # Find and select the matching item in the tree
+                for i in range(self.layer_tree.topLevelItemCount()):
+                    item = self.layer_tree.topLevelItem(i)
+                    if item.text(1) == current_layer_name:
+                        item.setSelected(True)
+                        print(f"[SELECT] Re-selected active layer: {current_layer_name}")
+                        return
+        except Exception as e:
+            print(f"[SELECT] Error selecting active layer: {e}")
 
     def on_layer_clicked(self, item, column):
         """Handle layer click - toggle visibility on icon column, set active on name column"""
@@ -377,8 +431,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Column 0 = icon (toggle visibility)
             # Column 1 = name (set as current layer)
             if column == 0:
-                # Toggle visibility
+                # Toggle visibility only - do NOT select row or activate layer
                 self.toggle_layer_visibility(item, layer_name)
+                # Clear selection immediately to prevent row highlighting
+                self.layer_tree.clearSelection()
+                # Re-select the currently active layer (not the clicked one)
+                self.select_active_layer()
             elif column == 1:
                 # Set as current layer
                 self.set_current_layer(layer_name)
@@ -525,6 +583,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         # Rename the layer in 3ds Max
                         layer.setname(new_name)
                         print(f"[LAYER] Renamed layer from '{old_name}' to '{new_name}'")
+
+                        # Refresh the layer list to re-sort alphabetically
+                        self.populate_layers()
                         break
             else:
                 print("[RENAME] Name unchanged or empty")
@@ -548,6 +609,66 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Refresh layers when window is shown
         self.populate_layers()
 
+    def setup_sync_timer(self):
+        """Setup timer to poll for current layer changes (syncs with native layer manager)"""
+        self.sync_timer = QtCore.QTimer(self)
+        self.sync_timer.timeout.connect(self.check_current_layer_sync)
+        # Check every 500ms for current layer changes
+        self.sync_timer.start(500)
+        print("[SYNC] Started layer sync timer (500ms)")
+
+    def check_current_layer_sync(self):
+        """Check if the current layer or visibility states changed in Max and update UI"""
+        if rt is None:
+            return
+
+        try:
+            # Get current layer from Max
+            layer_manager = rt.layerManager
+            current_layer = layer_manager.current
+
+            # Check if current layer changed
+            if current_layer:
+                current_layer_name = str(current_layer.name)
+
+                if current_layer_name != self.last_current_layer:
+                    print(f"[SYNC] Current layer changed from '{self.last_current_layer}' to '{current_layer_name}'")
+                    self.last_current_layer = current_layer_name
+                    # Update selection in tree
+                    self.select_active_layer()
+
+            # Check visibility states for all layers
+            layer_count = layer_manager.count
+            visibility_changed = False
+
+            for i in range(layer_count):
+                layer = layer_manager.getLayer(i)
+                if layer:
+                    layer_name = str(layer.name)
+                    is_hidden = layer.ishidden
+
+                    # Check if visibility changed for this layer
+                    if layer_name not in self.last_visibility_states or self.last_visibility_states[layer_name] != is_hidden:
+                        print(f"[SYNC] Visibility changed for '{layer_name}': hidden={is_hidden}")
+                        self.last_visibility_states[layer_name] = is_hidden
+                        visibility_changed = True
+
+                        # Update the icon in the tree
+                        for j in range(self.layer_tree.topLevelItemCount()):
+                            item = self.layer_tree.topLevelItem(j)
+                            if item.text(1) == layer_name:
+                                # Update icon
+                                if self.use_native_icons:
+                                    item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
+                                else:
+                                    new_icon_text = "✖" if is_hidden else "👁"
+                                    item.setText(0, new_icon_text)
+                                break
+
+        except Exception as e:
+            # Silently fail - this runs frequently so don't spam errors
+            pass
+
     def setup_callbacks(self):
         """Setup 3ds Max callbacks for automatic layer refresh"""
         if rt is None:
@@ -561,6 +682,11 @@ fn EskiLayerManagerCallback = (
     python.Execute "import eski_layer_manager; eski_layer_manager.refresh_from_callback()"
 )
 
+global EskiLayerManagerCurrentCallback
+fn EskiLayerManagerCurrentCallback = (
+    python.Execute "import eski_layer_manager; eski_layer_manager.sync_current_layer()"
+)
+
 global EskiLayerManagerSceneCallback
 fn EskiLayerManagerSceneCallback = (
     python.Execute "import eski_layer_manager; eski_layer_manager.refresh_on_scene_change()"
@@ -572,6 +698,16 @@ fn EskiLayerManagerSceneCallback = (
             rt.callbacks.addScript(rt.Name("layerCreated"), "EskiLayerManagerCallback()")
             rt.callbacks.addScript(rt.Name("layerDeleted"), "EskiLayerManagerCallback()")
             rt.callbacks.addScript(rt.Name("nodeLayerChanged"), "EskiLayerManagerCallback()")
+
+            # Register callback for current layer changes (just update selection, no full refresh)
+            # Try both possible callback names for layer current change
+            try:
+                rt.callbacks.addScript(rt.Name("layerCurrent"), "EskiLayerManagerCurrentCallback()")
+                print("[CALLBACKS] Registered layerCurrent callback")
+            except:
+                print("[CALLBACKS] layerCurrent callback not available, trying alternatives")
+                # Some Max versions might use different callback names
+                # We'll rely on the refresh from clicking in our UI instead
 
             # Register callbacks for scene events (use scene refresh - reopen window)
             rt.callbacks.addScript(rt.Name("filePostOpen"), "EskiLayerManagerSceneCallback()")
@@ -593,6 +729,7 @@ fn EskiLayerManagerSceneCallback = (
             rt.callbacks.removeScripts(rt.Name("layerCreated"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("layerDeleted"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("nodeLayerChanged"), id=rt.Name("EskiLayerManagerCallback"))
+            rt.callbacks.removeScripts(rt.Name("layerCurrent"), id=rt.Name("EskiLayerManagerCurrentCallback"))
             rt.callbacks.removeScripts(rt.Name("filePostOpen"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("systemPostReset"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("systemPostNew"), id=rt.Name("EskiLayerManagerCallback"))
@@ -670,6 +807,11 @@ fn EskiLayerManagerSceneCallback = (
 
     def closeEvent(self, event):
         """Handle close event"""
+        # Stop sync timer
+        if hasattr(self, 'sync_timer'):
+            self.sync_timer.stop()
+            print("[SYNC] Stopped layer sync timer")
+
         # Save position before closing
         self.save_position()
 
@@ -695,6 +837,25 @@ def refresh_from_callback():
             _layer_manager_instance[0].isVisible()
             # Refresh the layers
             _layer_manager_instance[0].populate_layers()
+        except (RuntimeError, AttributeError):
+            # Widget was deleted
+            _layer_manager_instance[0] = None
+
+
+def sync_current_layer():
+    """
+    Called by layerCurrent callback when the active layer changes in 3ds Max
+    Updates the selection in the tree to match without full refresh
+    """
+    global _layer_manager_instance
+
+    if _layer_manager_instance[0] is not None:
+        try:
+            # Check if widget is still valid
+            _layer_manager_instance[0].isVisible()
+            # Update selection to match current layer
+            _layer_manager_instance[0].select_active_layer()
+            print("[CALLBACK] Synced current layer selection")
         except (RuntimeError, AttributeError):
             # Widget was deleted
             _layer_manager_instance[0] = None
