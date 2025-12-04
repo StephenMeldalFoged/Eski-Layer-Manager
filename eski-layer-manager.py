@@ -130,8 +130,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Track visibility states for sync detection {layer_name: is_hidden}
         self.last_visibility_states = {}
 
-        # Load native 3ds Max icons for visibility
+        # Load native 3ds Max icons for visibility and add selection
         self.load_visibility_icons()
+        self.load_add_selection_icon()
 
         # Initialize UI
         self.init_ui()
@@ -218,6 +219,46 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # No native icons found - will use Unicode fallback
         print("[ICONS] Native icons not found or empty, using Unicode fallback")
 
+    def load_add_selection_icon(self):
+        """Load native 3ds Max icon for AddSelectionToCurrentLayer"""
+        self.icon_add_selection = None
+        self.use_native_add_icon = False
+
+        # Try using qtmax.LoadMaxMultiResIcon
+        try:
+            import qtmax
+            add_icon = qtmax.LoadMaxMultiResIcon("AddSelectionToCurrentLayer")
+
+            if add_icon and not add_icon.isNull():
+                # Check if icon has actual pixel data
+                if len(add_icon.availableSizes()) > 0:
+                    self.icon_add_selection = add_icon
+                    self.use_native_add_icon = True
+                    print(f"[ICONS] Loaded AddSelectionToCurrentLayer icon")
+                    return
+                else:
+                    print(f"[ICONS] AddSelectionToCurrentLayer icon has no pixel data")
+        except Exception as e:
+            print(f"[ICONS] LoadMaxMultiResIcon for AddSelectionToCurrentLayer failed: {e}")
+
+        # Try Qt resource paths
+        icon_candidates = [
+            ":/AddSelectionToCurrentLayer",
+            ":/Layers/AddSelectionToCurrentLayer",
+            ":/LayerManager/AddSelectionToCurrentLayer",
+        ]
+
+        for icon_path in icon_candidates:
+            add_icon = QtGui.QIcon(icon_path)
+            if not add_icon.isNull() and len(add_icon.availableSizes()) > 0:
+                self.icon_add_selection = add_icon
+                self.use_native_add_icon = True
+                print(f"[ICONS] Loaded AddSelectionToCurrentLayer from: {icon_path}")
+                return
+
+        # No native icon found - will use Unicode fallback "+"
+        print("[ICONS] AddSelectionToCurrentLayer icon not found, using Unicode fallback")
+
     def init_ui(self):
         """Initialize the user interface"""
         # Create central widget
@@ -243,8 +284,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Create tree widget for layers
         self.layer_tree = QtWidgets.QTreeWidget()
-        self.layer_tree.setHeaderLabels(["V", "Layer Name"])  # First column for visibility icon
-        self.layer_tree.setColumnWidth(0, 40)  # Icon column width
+        self.layer_tree.setHeaderLabels(["V", "+", "Layer Name"])  # Visibility, Add Selection, Name
+        self.layer_tree.setColumnWidth(0, 40)  # Visibility icon column width
+        self.layer_tree.setColumnWidth(1, 40)  # Add selection icon column width
         self.layer_tree.header().setStretchLastSection(True)  # Make name column stretch
         self.layer_tree.setAlternatingRowColors(True)
         self.layer_tree.itemClicked.connect(self.on_layer_clicked)
@@ -357,22 +399,35 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
                 print(f"[DEBUG] Layer: '{layer_name}', hidden={is_hidden}, current={is_current}")
 
-                # Add to tree with icon in first column, name in second
+                # Add to tree with 3 columns: visibility icon, add selection icon, layer name
                 if self.use_native_icons:
-                    # Use native icons
-                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["", layer_name])
+                    # Use native icons for visibility
+                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["", "", layer_name])
                     item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
                     item.setTextAlignment(0, QtCore.Qt.AlignCenter)
                 else:
-                    # Unicode fallback with larger font and center alignment
+                    # Unicode fallback for visibility
                     icon_text = "👁" if not is_hidden else "✖"
-                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, [icon_text, layer_name])
+                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, [icon_text, "", layer_name])
                     item.setTextAlignment(0, QtCore.Qt.AlignCenter)
                     # Make icon text larger and bold
                     font = item.font(0)
                     font.setPointSize(12)
                     font.setBold(True)
                     item.setFont(0, font)
+
+                # Add selection icon in column 1
+                if self.use_native_add_icon:
+                    item.setIcon(1, self.icon_add_selection)
+                    item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+                else:
+                    # Unicode fallback for add selection
+                    item.setText(1, "+")
+                    item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+                    font = item.font(1)
+                    font.setPointSize(14)
+                    font.setBold(True)
+                    item.setFont(1, font)
 
                 # Select the current/active layer
                 if is_current:
@@ -408,7 +463,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 # Find and select the matching item in the tree
                 for i in range(self.layer_tree.topLevelItemCount()):
                     item = self.layer_tree.topLevelItem(i)
-                    if item.text(1) == current_layer_name:
+                    if item.text(2) == current_layer_name:  # Column 2 is layer name
                         item.setSelected(True)
                         print(f"[SELECT] Re-selected active layer: {current_layer_name}")
                         return
@@ -416,20 +471,21 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             print(f"[SELECT] Error selecting active layer: {e}")
 
     def on_layer_clicked(self, item, column):
-        """Handle layer click - toggle visibility on icon column, set active on name column"""
+        """Handle layer click - toggle visibility, add selection, or set active layer"""
         if rt is None:
             return
 
         try:
-            # Get the layer name from the tree item (column 1)
-            layer_name = item.text(1)
+            # Get the layer name from the tree item (column 2)
+            layer_name = item.text(2)
 
             # Don't process test mode items
             if layer_name.startswith("[TEST MODE]"):
                 return
 
-            # Column 0 = icon (toggle visibility)
-            # Column 1 = name (set as current layer)
+            # Column 0 = visibility icon (toggle visibility)
+            # Column 1 = add selection icon (assign selected objects to layer)
+            # Column 2 = layer name (set as current layer)
             if column == 0:
                 # Toggle visibility only - do NOT select row or activate layer
                 self.toggle_layer_visibility(item, layer_name)
@@ -438,6 +494,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 # Re-select the currently active layer (not the clicked one)
                 self.select_active_layer()
             elif column == 1:
+                # Add selected objects to this layer
+                self.add_selection_to_layer(layer_name)
+                # Keep active layer highlighted
+                self.layer_tree.clearSelection()
+                self.select_active_layer()
+            elif column == 2:
                 # Set as current layer
                 self.set_current_layer(layer_name)
 
@@ -480,6 +542,46 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             error_msg = f"Error toggling layer visibility: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
 
+    def add_selection_to_layer(self, layer_name):
+        """Add all currently selected objects to the specified layer"""
+        if rt is None:
+            return
+
+        try:
+            # Get currently selected objects
+            selected_objects = rt.selection
+
+            if len(selected_objects) == 0:
+                print(f"[LAYER] No objects selected to add to layer '{layer_name}'")
+                return
+
+            # Find the target layer in 3ds Max by name
+            layer_manager = rt.layerManager
+            layer_count = layer_manager.count
+            target_layer = None
+
+            for i in range(layer_count):
+                layer = layer_manager.getLayer(i)
+                if layer and str(layer.name) == layer_name:
+                    target_layer = layer
+                    break
+
+            if target_layer:
+                # Assign all selected objects to this layer
+                object_count = 0
+                for obj in selected_objects:
+                    target_layer.addNode(obj)
+                    object_count += 1
+
+                print(f"[LAYER] Added {object_count} object(s) to layer '{layer_name}'")
+            else:
+                print(f"[ERROR] Layer '{layer_name}' not found")
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Error adding selection to layer: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] {error_msg}")
+
     def set_current_layer(self, layer_name):
         """Set the layer as current/active in 3ds Max"""
         if rt is None:
@@ -507,17 +609,17 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         """Handle layer double-click - start inline rename"""
         print("[RENAME] Double-click detected")
 
-        # Only rename on column 1 (name column), not column 0 (icon)
-        if column != 1:
+        # Only rename on column 2 (name column), not icon columns
+        if column != 2:
             return
 
         # Don't process test mode items
-        if item.text(1).startswith("[TEST MODE]"):
+        if item.text(2).startswith("[TEST MODE]"):
             print("[RENAME] Skipping test mode item")
             return
 
         # Store the original name before editing
-        self.editing_layer_name = item.text(1)
+        self.editing_layer_name = item.text(2)
         print(f"[RENAME] Starting edit for layer: {self.editing_layer_name}")
 
         # Block signals while making item editable to avoid premature itemChanged trigger
@@ -525,8 +627,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
         self.layer_tree.blockSignals(False)
 
-        # Now start editing (column 1 = name)
-        self.layer_tree.editItem(item, 1)
+        # Now start editing (column 2 = name)
+        self.layer_tree.editItem(item, 2)
         print("[RENAME] Edit mode activated")
 
     def on_layer_context_menu(self, position):
@@ -543,15 +645,15 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         action = menu.exec(self.layer_tree.viewport().mapToGlobal(position))
 
         if action == rename_action:
-            # Trigger inline rename on column 1 (name column)
-            self.on_layer_double_clicked(item, 1)
+            # Trigger inline rename on column 2 (name column)
+            self.on_layer_double_clicked(item, 2)
 
     def on_layer_renamed(self, item, column):
         """Handle layer rename after inline editing"""
         print(f"[RENAME] on_layer_renamed called, column: {column}, editing_layer_name: {self.editing_layer_name}")
 
-        # Only process renames on column 1 (name column)
-        if column != 1:
+        # Only process renames on column 2 (name column)
+        if column != 2:
             return
 
         if rt is None or self.editing_layer_name is None:
@@ -559,8 +661,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         try:
-            # Get the new name from the item (column 1)
-            new_name = item.text(1)
+            # Get the new name from the item (column 2)
+            new_name = item.text(2)
             old_name = self.editing_layer_name
 
             print(f"[RENAME] Old name: '{old_name}', New name: '{new_name}'")
@@ -656,7 +758,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         # Update the icon in the tree
                         for j in range(self.layer_tree.topLevelItemCount()):
                             item = self.layer_tree.topLevelItem(j)
-                            if item.text(1) == layer_name:
+                            if item.text(2) == layer_name:  # Column 2 is layer name
                                 # Update icon
                                 if self.use_native_icons:
                                     item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
