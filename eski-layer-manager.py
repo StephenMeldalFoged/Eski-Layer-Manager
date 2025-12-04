@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.5"
+VERSION = "0.6.12"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -54,29 +54,20 @@ class VisibilityIconDelegate(QtWidgets.QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         """Custom paint method for rendering icons"""
-        if index.column() == 0:
-            # Column 0 is the visibility icon column
-
-            # Get the tree widget to access column width
-            tree_widget = self.parent()
-            if tree_widget:
-                # Get the full column width
-                col_width = tree_widget.columnWidth(0)
-                # Create a rect that uses the full column width
-                full_rect = QtCore.QRect(0, option.rect.y(), col_width, option.rect.height())
-            else:
-                full_rect = option.rect
+        if index.column() == 1:
+            # Column 1 is the visibility icon column
+            # Just use the option.rect as-is, don't try to expand it
 
             # Try to get icon first (native icons)
             icon = index.data(QtCore.Qt.DecorationRole)
 
             if icon and isinstance(icon, QtGui.QIcon) and not icon.isNull():
-                # Draw native icon centered in full column width
+                # Draw native icon centered in the cell
                 painter.save()
-                icon.paint(painter, full_rect, QtCore.Qt.AlignCenter)
+                icon.paint(painter, option.rect, QtCore.Qt.AlignCenter)
                 painter.restore()
             else:
-                # Draw Unicode fallback text centered in full column width
+                # Draw Unicode fallback text centered in the cell
                 text = index.data(QtCore.Qt.DisplayRole)
                 if text:
                     painter.save()
@@ -86,7 +77,7 @@ class VisibilityIconDelegate(QtWidgets.QStyledItemDelegate):
                     font.setBold(True)
                     painter.setFont(font)
                     # Draw text centered
-                    painter.drawText(full_rect, QtCore.Qt.AlignCenter, str(text))
+                    painter.drawText(option.rect, QtCore.Qt.AlignCenter, str(text))
                     painter.restore()
         else:
             # Use default rendering for other columns
@@ -281,11 +272,17 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Create tree widget for layers
         self.layer_tree = QtWidgets.QTreeWidget()
-        self.layer_tree.setHeaderLabels(["V", "+", "Layer Name"])  # Visibility, Add Selection, Name
-        self.layer_tree.setColumnWidth(0, 40)  # Visibility icon column width
-        self.layer_tree.setColumnWidth(1, 40)  # Add selection icon column width
+        self.layer_tree.setHeaderLabels(["▶", "V", "+", "Layer Name"])  # Arrow, Visibility, Add Selection, Name
+        self.layer_tree.setColumnWidth(0, 30)  # Arrow column width
+        self.layer_tree.setColumnWidth(1, 40)  # Visibility icon column width
+        self.layer_tree.setColumnWidth(2, 40)  # Add selection icon column width
         self.layer_tree.header().setStretchLastSection(True)  # Make name column stretch
         self.layer_tree.setAlternatingRowColors(True)
+
+        # Disable automatic tree decoration since we have manual arrows in column 0
+        self.layer_tree.setRootIsDecorated(False)
+        self.layer_tree.setIndentation(0)  # No automatic indentation
+
         self.layer_tree.itemClicked.connect(self.on_layer_clicked)
         self.layer_tree.itemDoubleClicked.connect(self.on_layer_double_clicked)
         self.layer_tree.itemChanged.connect(self.on_layer_renamed)
@@ -298,10 +295,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Set uniform row heights for better icon display
         self.layer_tree.setUniformRowHeights(True)
 
-        # Install custom delegate for column 0 (visibility icons)
+        # Install custom delegate for column 1 (visibility icons)
         # This gives us direct control over rendering and fixes display issues
         self.visibility_delegate = VisibilityIconDelegate(self.layer_tree)
-        self.layer_tree.setItemDelegateForColumn(0, self.visibility_delegate)
+        self.layer_tree.setItemDelegateForColumn(1, self.visibility_delegate)
         pass  # Debug print removed
 
         top_layout.addWidget(self.layer_tree)
@@ -344,7 +341,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.populate_layers()
 
     def populate_layers(self):
-        """Populate the layer list with layers from 3ds Max"""
+        """Populate the layer list with layers from 3ds Max, including hierarchy"""
         # Temporarily disconnect itemChanged signal to avoid triggering rename during population
         try:
             self.layer_tree.itemChanged.disconnect(self.on_layer_renamed)
@@ -354,82 +351,82 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.clear()
 
         if rt is None:
-            # Testing mode outside 3ds Max - add dummy data
-            pass  # Debug print removed
-            item1 = QtWidgets.QTreeWidgetItem(self.layer_tree, ["👁", "[TEST MODE] 0 (default)"])
-            item2 = QtWidgets.QTreeWidgetItem(self.layer_tree, ["👁", "[TEST MODE] Layer 1"])
-            item3 = QtWidgets.QTreeWidgetItem(self.layer_tree, ["👁", "[TEST MODE] Layer 2"])
+            # Testing mode outside 3ds Max - add dummy data with hierarchy
+            parent = QtWidgets.QTreeWidgetItem(self.layer_tree, ["▼", "👁", "+", "[TEST MODE] Parent Layer"])
+            child1 = QtWidgets.QTreeWidgetItem(parent, ["▶", "👁", "+", "[TEST MODE] Child 1"])
+            child2 = QtWidgets.QTreeWidgetItem(parent, ["▶", "👁", "+", "[TEST MODE] Child 2"])
+            root = QtWidgets.QTreeWidgetItem(self.layer_tree, ["▶", "👁", "+", "[TEST MODE] Root Layer"])
+            parent.setExpanded(True)  # Expand parent by default
             # Reconnect signal
             self.layer_tree.itemChanged.connect(self.on_layer_renamed)
             return
 
-        pass  # Debug print removed
-
         try:
             # Get the layer manager from 3ds Max
             layer_manager = rt.layerManager
-
-            # Get all layers and store their info
             layer_count = layer_manager.count
-            pass  # Debug print removed
+            print(f"[HIERARCHY] Found {layer_count} total layers")
 
-            # Collect all layer data first
-            layer_data = []
+            # TEMPORARY: Just show ALL layers flat (no hierarchy yet)
+            # This is to debug why no layers are showing
+            all_layers = []
             for i in range(layer_count):
                 layer = layer_manager.getLayer(i)
                 if layer:
-                    layer_data.append({
-                        'name': str(layer.name),
-                        'hidden': layer.ishidden,
-                        'current': layer.current
-                    })
+                    all_layers.append(layer)
+                    print(f"[HIERARCHY] Layer {i}: {layer.name}")
 
-            # Sort layers alphabetically by name
-            layer_data.sort(key=lambda x: x['name'].lower())
-            pass  # Debug print removed
+            # Sort alphabetically
+            all_layers.sort(key=lambda x: str(x.name).lower())
 
-            # Now add sorted layers to tree
-            for data in layer_data:
-                layer_name = data['name']
-                is_hidden = data['hidden']
-                is_current = data['current']
+            # Add all layers FLAT (no parent/child yet)
+            for layer in all_layers:
+                layer_name = str(layer.name)
+                is_hidden = layer.ishidden
+                is_current = layer.current
 
-                pass  # Debug print removed
+                # Column 0: Arrow (▶ for all layers for now)
+                # Column 1: Visibility icon
+                # Column 2: Add selection icon
+                # Column 3: Layer name
 
-                # Add to tree with 3 columns: visibility icon, add selection icon, layer name
+                # Create flat tree items with arrow in column 0
                 if self.use_native_icons:
-                    # Use native icons for visibility
-                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["", "", layer_name])
-                    item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
-                    item.setTextAlignment(0, QtCore.Qt.AlignCenter)
-                else:
-                    # Unicode fallback for visibility
-                    icon_text = "👁" if not is_hidden else "✖"
-                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, [icon_text, "", layer_name])
-                    item.setTextAlignment(0, QtCore.Qt.AlignCenter)
-                    # Make icon text larger and bold
-                    font = item.font(0)
-                    font.setPointSize(12)
-                    font.setBold(True)
-                    item.setFont(0, font)
-
-                # Add selection icon in column 1
-                if self.use_native_add_icon:
-                    item.setIcon(1, self.icon_add_selection)
+                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["▶", "", "", layer_name])
+                    item.setIcon(1, self.icon_hidden if is_hidden else self.icon_visible)
                     item.setTextAlignment(1, QtCore.Qt.AlignCenter)
                 else:
-                    # Unicode fallback for add selection
-                    item.setText(1, "+")
+                    icon_text = "👁" if not is_hidden else "✖"
+                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["▶", icon_text, "", layer_name])
                     item.setTextAlignment(1, QtCore.Qt.AlignCenter)
                     font = item.font(1)
-                    font.setPointSize(14)
+                    font.setPointSize(12)
                     font.setBold(True)
                     item.setFont(1, font)
+
+                # Add arrow styling in column 0
+                item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+                arrow_font = item.font(0)
+                arrow_font.setPointSize(10)
+                item.setFont(0, arrow_font)
+
+                # Add selection icon in column 2
+                if self.use_native_add_icon:
+                    item.setIcon(2, self.icon_add_selection)
+                    item.setTextAlignment(2, QtCore.Qt.AlignCenter)
+                else:
+                    item.setText(2, "+")
+                    item.setTextAlignment(2, QtCore.Qt.AlignCenter)
+                    font = item.font(2)
+                    font.setPointSize(14)
+                    font.setBold(True)
+                    item.setFont(2, font)
 
                 # Select the current/active layer
                 if is_current:
                     item.setSelected(True)
-                    pass  # Debug print removed
+
+            print(f"[HIERARCHY] Added {len(all_layers)} layers to tree")
 
         except Exception as e:
             # If layer access fails, show error
@@ -440,6 +437,93 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Reconnect the itemChanged signal
         self.layer_tree.itemChanged.connect(self.on_layer_renamed)
+
+    def _add_layer_to_tree(self, layer, parent_item, layer_map):
+        """
+        Recursively add a layer and its children to the tree
+
+        Args:
+            layer: The layer object from 3ds Max
+            parent_item: The parent QTreeWidgetItem (None for root layers)
+            layer_map: Dictionary mapping layer names to layer objects
+        """
+        layer_name = str(layer.name)
+        is_hidden = layer.ishidden
+        is_current = layer.current
+
+        # Create tree item
+        if parent_item is None:
+            # Root level item
+            if self.use_native_icons:
+                item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["", "", layer_name])
+                item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
+                item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+            else:
+                icon_text = "👁" if not is_hidden else "✖"
+                item = QtWidgets.QTreeWidgetItem(self.layer_tree, [icon_text, "", layer_name])
+                item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+                font = item.font(0)
+                font.setPointSize(12)
+                font.setBold(True)
+                item.setFont(0, font)
+        else:
+            # Child item
+            if self.use_native_icons:
+                item = QtWidgets.QTreeWidgetItem(parent_item, ["", "", layer_name])
+                item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
+                item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+            else:
+                icon_text = "👁" if not is_hidden else "✖"
+                item = QtWidgets.QTreeWidgetItem(parent_item, [icon_text, "", layer_name])
+                item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+                font = item.font(0)
+                font.setPointSize(12)
+                font.setBold(True)
+                item.setFont(0, font)
+
+        # Add selection icon in column 1
+        if self.use_native_add_icon:
+            item.setIcon(1, self.icon_add_selection)
+            item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+        else:
+            item.setText(1, "+")
+            item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+            font = item.font(1)
+            font.setPointSize(14)
+            font.setBold(True)
+            item.setFont(1, font)
+
+        # Select the current/active layer
+        if is_current:
+            item.setSelected(True)
+
+        # Check for children and add them recursively
+        try:
+            num_children = layer.getNumChildren()
+            print(f"[HIERARCHY] {layer_name} has {num_children} children")
+
+            if num_children > 0:
+                item.setExpanded(True)  # Expand parents by default
+
+                # Get children and sort them alphabetically
+                children = []
+                for i in range(num_children):
+                    try:
+                        child = layer.getChild(i + 1)  # MAXScript uses 1-based indexing
+                        if child:
+                            children.append(child)
+                            print(f"[HIERARCHY]   Child: {child.name}")
+                    except Exception as e:
+                        print(f"[ERROR] Getting child {i+1}: {e}")
+
+                # Sort children alphabetically
+                children.sort(key=lambda x: str(x.name).lower())
+
+                # Recursively add children
+                for child in children:
+                    self._add_layer_to_tree(child, item, layer_map)
+        except Exception as e:
+            print(f"[ERROR] Processing children for '{layer_name}': {e}")
 
     def select_active_layer(self):
         """Find and select the currently active layer in the tree"""
@@ -473,30 +557,34 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         try:
-            # Get the layer name from the tree item (column 2)
-            layer_name = item.text(2)
+            # Get the layer name from the tree item (column 3)
+            layer_name = item.text(3)
 
             # Don't process test mode items
             if layer_name.startswith("[TEST MODE]"):
                 return
 
-            # Column 0 = visibility icon (toggle visibility)
-            # Column 1 = add selection icon (assign selected objects to layer)
-            # Column 2 = layer name (set as current layer)
+            # Column 0 = arrow (expand/collapse - will implement later)
+            # Column 1 = visibility icon (toggle visibility)
+            # Column 2 = add selection icon (assign selected objects to layer)
+            # Column 3 = layer name (set as current layer)
             if column == 0:
+                # Arrow click - expand/collapse (TODO: implement hierarchy)
+                pass
+            elif column == 1:
                 # Toggle visibility only - do NOT select row or activate layer
                 self.toggle_layer_visibility(item, layer_name)
                 # Clear selection immediately to prevent row highlighting
                 self.layer_tree.clearSelection()
                 # Re-select the currently active layer (not the clicked one)
                 self.select_active_layer()
-            elif column == 1:
+            elif column == 2:
                 # Add selected objects to this layer
                 self.add_selection_to_layer(layer_name)
                 # Keep active layer highlighted
                 self.layer_tree.clearSelection()
                 self.select_active_layer()
-            elif column == 2:
+            elif column == 3:
                 # Set as current layer
                 self.set_current_layer(layer_name)
 
@@ -521,14 +609,14 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     # Toggle visibility
                     layer.ishidden = not layer.ishidden
 
-                    # Update icon (native if available, Unicode fallback otherwise)
+                    # Update icon in column 1 (native if available, Unicode fallback otherwise)
                     if self.use_native_icons:
-                        item.setIcon(0, self.icon_hidden if layer.ishidden else self.icon_visible)
-                        item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+                        item.setIcon(1, self.icon_hidden if layer.ishidden else self.icon_visible)
+                        item.setTextAlignment(1, QtCore.Qt.AlignCenter)
                     else:
                         new_icon_text = "✖" if layer.ishidden else "👁"
-                        item.setText(0, new_icon_text)
-                        item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+                        item.setText(1, new_icon_text)
+                        item.setTextAlignment(1, QtCore.Qt.AlignCenter)
 
                     status = "hidden" if layer.ishidden else "visible"
                     pass  # Debug print removed
@@ -606,17 +694,17 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         """Handle layer double-click - start inline rename"""
         pass  # Debug print removed
 
-        # Only rename on column 2 (name column), not icon columns
-        if column != 2:
+        # Only rename on column 3 (name column), not other columns
+        if column != 3:
             return
 
         # Don't process test mode items
-        if item.text(2).startswith("[TEST MODE]"):
+        if item.text(3).startswith("[TEST MODE]"):
             pass  # Debug print removed
             return
 
         # Store the original name before editing
-        self.editing_layer_name = item.text(2)
+        self.editing_layer_name = item.text(3)
         pass  # Debug print removed
 
         # Block signals while making item editable to avoid premature itemChanged trigger
@@ -642,15 +730,15 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         action = menu.exec(self.layer_tree.viewport().mapToGlobal(position))
 
         if action == rename_action:
-            # Trigger inline rename on column 2 (name column)
-            self.on_layer_double_clicked(item, 2)
+            # Trigger inline rename on column 3 (name column)
+            self.on_layer_double_clicked(item, 3)
 
     def on_layer_renamed(self, item, column):
         """Handle layer rename after inline editing"""
         pass  # Debug print removed
 
-        # Only process renames on column 2 (name column)
-        if column != 2:
+        # Only process renames on column 3 (name column)
+        if column != 3:
             return
 
         if rt is None or self.editing_layer_name is None:
@@ -658,8 +746,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         try:
-            # Get the new name from the item (column 2)
-            new_name = item.text(2)
+            # Get the new name from the item (column 3)
+            new_name = item.text(3)
             old_name = self.editing_layer_name
 
             pass  # Debug print removed

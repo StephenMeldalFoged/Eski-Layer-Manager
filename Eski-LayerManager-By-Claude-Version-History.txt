@@ -140,6 +140,91 @@ Changes:
 
 ---
 
+Version 0.6.6 (Fix Hierarchy - Restore Lost Code)
+Date: 2025-12-04
+Git Tag: v0.6.6 (to be created)
+
+Bug Fixes:
+- Restored hierarchy code that was lost during git checkout
+- Re-implemented populate_layers() with proper hierarchy building
+- Re-added _add_layer_to_tree() recursive method
+- Layers now properly display nested with arrows and indentation
+- Test mode now shows example hierarchy
+
+Debug Output:
+- Added [HIERARCHY] prints to track parent-child relationships
+- Shows which layers are roots vs children
+- Displays child count and names for each parent layer
+
+---
+
+Version 0.6.8 (Add Manual Arrow Column)
+Date: 2025-12-04
+Git Tag: v0.6.8 (to be created)
+
+Features:
+- Added dedicated arrow column (column 0) for all layers
+- Shows ▶ arrow for all layers (preparation for hierarchy)
+- New 4-column layout: Arrow | Visibility | Add Selection | Layer Name
+- Arrow column is 30px wide, centered text
+
+Changes:
+- Updated all column references throughout codebase
+- Column 0: Arrow (click handler ready for expand/collapse)
+- Column 1: Visibility icon (moved from column 0)
+- Column 2: Add selection icon (moved from column 1)
+- Column 3: Layer name (moved from column 2)
+- Custom delegate now works on column 1
+- All click handlers updated for new column layout
+
+---
+
+Version 0.6.10 (Fix Icon Delegate Positioning)
+Date: 2025-12-04
+Git Tag: v0.6.10 (to be created)
+
+Bug Fixes:
+- Fixed delegate paint method to use option.rect instead of creating rect at x=0
+- Visibility icons now render in correct column (column 1) instead of overlapping column 0
+- Arrows and eyes now properly separated in their respective columns
+
+Technical Details:
+- Delegate was creating QtCore.QRect(0, y, width, height) which drew from absolute left
+- Now uses option.rect which has correct x-position for the column
+- Much simpler and cleaner delegate implementation
+
+IMPORTANT: Version policy is to increment patch version (0.6.X), not minor version (0.X.0).
+
+---
+
+Version 0.6.11 (Fix Click Handler Layer Name)
+Date: 2025-12-04
+Git Tag: v0.6.11 (to be created)
+
+Bug Fixes:
+- Fixed on_layer_clicked to get layer name from column 3 instead of column 2
+- Visibility toggle (eye icon) now works again
+- Add selection (+) button now works again
+- Set active layer (name column click) now works again
+
+---
+
+Version 0.6.12 (Fix Visibility Icon Update Column)
+Date: 2025-12-04
+Git Tag: v0.6.12 (to be created)
+
+Bug Fixes:
+- Fixed toggle_layer_visibility to update icon in column 1 instead of column 0
+- Visibility icons now properly change from 👁 to ✖ when toggled
+- No more ghost icons appearing in column 0 (arrow column)
+
+Technical Details:
+- toggle_layer_visibility was calling item.setIcon(0, ...) and item.setText(0, ...)
+- Changed to item.setIcon(1, ...) and item.setText(1, ...)
+- Icons now update in correct visibility column
+
+---
+
 FUTURE VERSIONS
 ===============
 
