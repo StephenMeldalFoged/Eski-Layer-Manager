@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.4.18"
+VERSION = "0.5.3"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -41,6 +41,59 @@ if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
     # Global instance variable - use a list to prevent garbage collection
     # List makes it a mutable container that survives module namespace issues
     _layer_manager_instance = [None]
+
+
+class VisibilityIconDelegate(QtWidgets.QStyledItemDelegate):
+    """
+    Custom delegate for rendering visibility icons in the tree widget
+    This gives us full control over icon rendering, fixing display issues in 3ds Max
+    """
+
+    def __init__(self, parent=None):
+        super(VisibilityIconDelegate, self).__init__(parent)
+
+    def paint(self, painter, option, index):
+        """Custom paint method for rendering icons"""
+        if index.column() == 0:
+            # Column 0 is the visibility icon column
+
+            # Get the tree widget to access column width
+            tree_widget = self.parent()
+            if tree_widget:
+                # Get the full column width
+                col_width = tree_widget.columnWidth(0)
+                # Create a rect that uses the full column width
+                full_rect = QtCore.QRect(0, option.rect.y(), col_width, option.rect.height())
+                print(f"[DELEGATE] option.rect: {option.rect}, full column width: {col_width}, full_rect: {full_rect}")
+            else:
+                full_rect = option.rect
+
+            # Try to get icon first (native icons)
+            icon = index.data(QtCore.Qt.DecorationRole)
+
+            if icon and isinstance(icon, QtGui.QIcon) and not icon.isNull():
+                # Draw native icon centered in full column width
+                painter.save()
+                icon.paint(painter, full_rect, QtCore.Qt.AlignCenter)
+                painter.restore()
+                print(f"[DELEGATE] Painted native icon, isNull={icon.isNull()}, availableSizes={icon.availableSizes()}")
+            else:
+                # Draw Unicode fallback text centered in full column width
+                text = index.data(QtCore.Qt.DisplayRole)
+                if text:
+                    painter.save()
+                    # Set font for Unicode emoji
+                    font = painter.font()
+                    font.setPointSize(14)
+                    font.setBold(True)
+                    painter.setFont(font)
+                    # Draw text centered
+                    painter.drawText(full_rect, QtCore.Qt.AlignCenter, str(text))
+                    painter.restore()
+                    print(f"[DELEGATE] Painted Unicode '{text}'")
+        else:
+            # Use default rendering for other columns
+            super(VisibilityIconDelegate, self).paint(painter, option, index)
 
 
 class EskiLayerManager(QtWidgets.QDockWidget):
@@ -96,7 +149,13 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 self.icon_visible = visible_icon
                 self.icon_hidden = hidden_icon
                 self.use_native_icons = True
-                print("[ICONS] Loaded icons using LoadMaxMultiResIcon")
+                # Debug: Check if icons actually have pixmap data
+                print(f"[ICONS] Loaded icons using LoadMaxMultiResIcon")
+                print(f"[ICONS] Visible icon: isNull={visible_icon.isNull()}, sizes={visible_icon.availableSizes()}")
+                print(f"[ICONS] Hidden icon: isNull={hidden_icon.isNull()}, sizes={hidden_icon.availableSizes()}")
+                # Try to get a pixmap to verify it has content
+                pixmap = visible_icon.pixmap(16, 16)
+                print(f"[ICONS] Visible pixmap 16x16: isNull={pixmap.isNull()}, size={pixmap.size()}")
                 return
         except Exception as e:
             print(f"[ICONS] LoadMaxMultiResIcon failed: {e}")
@@ -115,14 +174,19 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             hidden_icon = QtGui.QIcon(hidden_path)
 
             if not visible_icon.isNull() and not hidden_icon.isNull():
-                self.icon_visible = visible_icon
-                self.icon_hidden = hidden_icon
-                self.use_native_icons = True
-                print(f"[ICONS] Loaded Qt resource icons: {visible_path} / {hidden_path}")
-                return
+                # Icons loaded, but check if they have actual pixel data
+                # availableSizes() returns empty list if icon has no renderable content
+                if len(visible_icon.availableSizes()) > 0 and len(hidden_icon.availableSizes()) > 0:
+                    self.icon_visible = visible_icon
+                    self.icon_hidden = hidden_icon
+                    self.use_native_icons = True
+                    print(f"[ICONS] Loaded Qt resource icons with pixel data: {visible_path} / {hidden_path}")
+                    return
+                else:
+                    print(f"[ICONS] Icons at {visible_path} exist but have no pixel data (empty/transparent)")
 
         # No native icons found - will use Unicode fallback
-        print("[ICONS] Native icons not found, using Unicode fallback")
+        print("[ICONS] Native icons not found or empty, using Unicode fallback")
 
     def init_ui(self):
         """Initialize the user interface"""
@@ -164,6 +228,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Set uniform row heights for better icon display
         self.layer_tree.setUniformRowHeights(True)
+
+        # Install custom delegate for column 0 (visibility icons)
+        # This gives us direct control over rendering and fixes display issues
+        self.visibility_delegate = VisibilityIconDelegate(self.layer_tree)
+        self.layer_tree.setItemDelegateForColumn(0, self.visibility_delegate)
+        print("[UI] Custom visibility icon delegate installed")
 
         top_layout.addWidget(self.layer_tree)
 
@@ -486,7 +556,7 @@ fn EskiLayerManagerSceneCallback = (
             rt.callbacks.addScript(rt.Name("filePostOpen"), "EskiLayerManagerSceneCallback()")
             rt.callbacks.addScript(rt.Name("systemPostReset"), "EskiLayerManagerSceneCallback()")
             rt.callbacks.addScript(rt.Name("systemPostNew"), "EskiLayerManagerSceneCallback()")
-            rt.callbacks.addScript(rt.Name("postMerge"), "EskiLayerManagerSceneCallback()")
+            # Note: postMerge callback not supported in 3ds Max 2026
 
             print("[CALLBACKS] Layer change and scene callbacks registered")
         except Exception as e:
@@ -505,7 +575,7 @@ fn EskiLayerManagerSceneCallback = (
             rt.callbacks.removeScripts(rt.Name("filePostOpen"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("systemPostReset"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("systemPostNew"), id=rt.Name("EskiLayerManagerCallback"))
-            rt.callbacks.removeScripts(rt.Name("postMerge"), id=rt.Name("EskiLayerManagerCallback"))
+            # Note: postMerge callback not supported in 3ds Max 2026
             print("[CALLBACKS] All callbacks removed")
         except Exception as e:
             print(f"[CALLBACKS] Failed to remove callbacks: {e}")
