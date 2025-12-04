@@ -38,24 +38,119 @@ Usage in 3ds Max:
 
 ---
 
+Version 0.6.1 (Nested Layer Hierarchy Support)
+Date: 2025-12-04
+Git Tag: v0.6.1 (to be created)
+
+Features:
+- Full nested layer hierarchy support
+- Displays parent-child layer relationships with indentation
+- Automatically expands parent layers by default (like native layer manager)
+- Drag-and-drop layer reparenting
+  - Drop ON a layer to make it a child
+  - Drop ABOVE/BELOW a layer to make it a sibling
+  - Drop on empty space to make it a root layer
+  - Circular reference prevention (can't make layer child of itself or descendant)
+- Recursive layer tree traversal for finding and selecting layers
+- MAXScript API methods used:
+  - layer.getParent() - Get parent layer
+  - layer.setParent(parent) - Set parent layer
+  - layer.getNumChildren() - Count child layers
+  - layer.getChild(index) - Get child by 1-based index
+- Alphabetical sorting maintained at each hierarchy level
+- Test mode includes sample hierarchy for UI development
+- New debug output: [HIERARCHY] prefix for hierarchy operations
+- New debug output: [DRAG] prefix for drag-and-drop operations
+
+Usage in 3ds Max:
+  import eski_layer_manager
+  eski_layer_manager.show_layer_manager()
+
+  # Drag layers to reparent them
+  # Drop on a layer to nest under it
+  # Drop between layers to make siblings
+  # Drop on empty space to make root
+
+API References:
+- https://stackoverflow.com/questions/28325804/3ds-max-nested-layers-hierarchy
+- https://help.autodesk.com/cloudhelp/2017/ENU/MAXScript-Help/files/GUID-78B79975-7BA5-4A03-8FEF-27E78D14B575.htm
+
+---
+
+Version 0.6.2 (Nested Layers Debug & Fix)
+Date: 2025-12-04
+Git Tag: v0.6.2 (to be created)
+
+Features:
+- Enhanced debug output for nested layer operations
+- Better error handling for getParent() to handle pymxs undefined values
+- Added extensive [HIERARCHY] debug messages showing:
+  - Parent layer detection for each layer
+  - Root layer identification
+  - Child count for each layer
+  - Individual child names
+- Fixed parent detection to check string representation of undefined
+- Added try-catch blocks around all hierarchy operations
+
+Bug Fixes:
+- Fixed issue with detecting root layers (parent comparison with undefined)
+- Added fallback for layers where getParent() fails
+
+---
+
+Version 0.6.3 (Tree View UI Improvements)
+Date: 2025-12-04
+Git Tag: v0.6.3 (to be created)
+
+Features:
+- Explicitly enabled tree view hierarchy visualization
+- Added setIndentation(20) for proper child indentation
+- Added setRootIsDecorated(True) to show expand/collapse arrows
+- Added setAnimated(True) for smooth expand/collapse animations
+- Tree now properly shows hierarchy with visual arrows like native layer manager
+
+UI Improvements:
+- Expand/collapse arrows now visible for parent layers
+- 20px indentation for child layers
+- Smooth animation when expanding/collapsing
+- Matches native layer manager visual style
+
+---
+
+Version 0.6.4 (Reduce Debug Spam)
+Date: 2025-12-04
+Git Tag: v0.6.4 (to be created)
+
+Changes:
+- Removed all debug print statements to stop MAXScript Listener spam
+- Kept only [ERROR] print statements for critical issues
+- Replaced debug prints with pass statements to maintain code structure
+- Much cleaner output - only shows errors when they occur
+
+---
+
+Version 0.6.5 (Remove Delegate Spam)
+Date: 2025-12-04
+Git Tag: v0.6.5 (to be created)
+
+Changes:
+- Removed [DELEGATE] debug prints from VisibilityIconDelegate paint method
+- No more spam from icon rendering on every repaint
+- MAXScript Listener now completely clean - only ERROR messages
+
+---
+
 FUTURE VERSIONS
 ===============
 
-Version 0.3.0 (Planned)
-- Layer list display
-- Basic layer information (name, status)
+Version 0.7.0 (Planned)
+- Bulk layer visibility & freeze control with isolation mode
+- Freeze/unfreeze toggle
+- Isolate mode (hide all except selected)
 
-Version 0.3.0 (Planned)
-- Layer list display
-- Basic layer information (name, status)
-
-Version 0.4.0 (Planned)
-- Object list per layer
-- Layer selection functionality
-
-Version 0.5.0 (Planned)
-- Layer management operations (create, delete, rename)
-- Object assignment to layers
+Version 0.8.0 (Planned)
+- Quick object selection by layer (click to select all objects)
+- Object list display in bottom panel
 
 ---
 

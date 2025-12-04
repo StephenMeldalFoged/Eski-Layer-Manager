@@ -10,19 +10,19 @@ from PySide6 import QtWidgets, QtCore, QtGui
 # Import pymxs (required for 3ds Max API access)
 try:
     from pymxs import runtime as rt
-    print("[IMPORT] Successfully imported pymxs")
+    pass  # Debug print removed
 except ImportError as e:
     # For development/testing outside 3ds Max
     rt = None
-    print(f"[IMPORT] Failed to import pymxs: {e}")
+    pass  # Debug print removed
 
 # Import MaxPlus (optional - deprecated in 3ds Max 2023+)
 try:
     import MaxPlus
-    print("[IMPORT] Successfully imported MaxPlus")
+    pass  # Debug print removed
 except ImportError:
     MaxPlus = None
-    print("[IMPORT] MaxPlus not available (deprecated in 3ds Max 2023+)")
+    pass  # Debug print removed
 
 # Try to import qtmax for docking functionality
 try:
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.0"
+VERSION = "0.6.5"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -64,7 +64,6 @@ class VisibilityIconDelegate(QtWidgets.QStyledItemDelegate):
                 col_width = tree_widget.columnWidth(0)
                 # Create a rect that uses the full column width
                 full_rect = QtCore.QRect(0, option.rect.y(), col_width, option.rect.height())
-                print(f"[DELEGATE] option.rect: {option.rect}, full column width: {col_width}, full_rect: {full_rect}")
             else:
                 full_rect = option.rect
 
@@ -76,7 +75,6 @@ class VisibilityIconDelegate(QtWidgets.QStyledItemDelegate):
                 painter.save()
                 icon.paint(painter, full_rect, QtCore.Qt.AlignCenter)
                 painter.restore()
-                print(f"[DELEGATE] Painted native icon, isNull={icon.isNull()}, availableSizes={icon.availableSizes()}")
             else:
                 # Draw Unicode fallback text centered in full column width
                 text = index.data(QtCore.Qt.DisplayRole)
@@ -90,7 +88,6 @@ class VisibilityIconDelegate(QtWidgets.QStyledItemDelegate):
                     # Draw text centered
                     painter.drawText(full_rect, QtCore.Qt.AlignCenter, str(text))
                     painter.restore()
-                    print(f"[DELEGATE] Painted Unicode '{text}'")
         else:
             # Use default rendering for other columns
             super(VisibilityIconDelegate, self).paint(painter, option, index)
@@ -173,16 +170,16 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                             self.icon_visible = visible_icon
                             self.icon_hidden = hidden_icon
                             self.use_native_icons = True
-                            print(f"[ICONS] Loaded icons using LoadMaxMultiResIcon: {visible_path} / {hidden_path}")
-                            print(f"[ICONS] Visible icon sizes={visible_icon.availableSizes()}")
+                            pass  # Debug print removed
+                            pass  # Debug print removed
                             return
                         else:
-                            print(f"[ICONS] Icons at {visible_path} have no pixel data")
+                            pass  # Debug print removed
                 except Exception as e:
-                    print(f"[ICONS] Failed to load {visible_path}: {e}")
+                    pass  # Debug print removed
 
         except Exception as e:
-            print(f"[ICONS] LoadMaxMultiResIcon not available: {e}")
+            pass  # Debug print removed
 
         # Try Qt resource system paths
         icon_candidates = [
@@ -211,13 +208,13 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     self.icon_visible = visible_icon
                     self.icon_hidden = hidden_icon
                     self.use_native_icons = True
-                    print(f"[ICONS] Loaded Qt resource icons with pixel data: {visible_path} / {hidden_path}")
+                    pass  # Debug print removed
                     return
                 else:
-                    print(f"[ICONS] Icons at {visible_path} exist but have no pixel data (empty/transparent)")
+                    pass  # Debug print removed
 
         # No native icons found - will use Unicode fallback
-        print("[ICONS] Native icons not found or empty, using Unicode fallback")
+        pass  # Debug print removed
 
     def load_add_selection_icon(self):
         """Load native 3ds Max icon for AddSelectionToCurrentLayer"""
@@ -234,12 +231,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 if len(add_icon.availableSizes()) > 0:
                     self.icon_add_selection = add_icon
                     self.use_native_add_icon = True
-                    print(f"[ICONS] Loaded AddSelectionToCurrentLayer icon")
+                    pass  # Debug print removed
                     return
                 else:
-                    print(f"[ICONS] AddSelectionToCurrentLayer icon has no pixel data")
+                    pass  # Debug print removed
         except Exception as e:
-            print(f"[ICONS] LoadMaxMultiResIcon for AddSelectionToCurrentLayer failed: {e}")
+            pass  # Debug print removed
 
         # Try Qt resource paths
         icon_candidates = [
@@ -253,11 +250,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             if not add_icon.isNull() and len(add_icon.availableSizes()) > 0:
                 self.icon_add_selection = add_icon
                 self.use_native_add_icon = True
-                print(f"[ICONS] Loaded AddSelectionToCurrentLayer from: {icon_path}")
+                pass  # Debug print removed
                 return
 
         # No native icon found - will use Unicode fallback "+"
-        print("[ICONS] AddSelectionToCurrentLayer icon not found, using Unicode fallback")
+        pass  # Debug print removed
 
     def init_ui(self):
         """Initialize the user interface"""
@@ -305,7 +302,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # This gives us direct control over rendering and fixes display issues
         self.visibility_delegate = VisibilityIconDelegate(self.layer_tree)
         self.layer_tree.setItemDelegateForColumn(0, self.visibility_delegate)
-        print("[UI] Custom visibility icon delegate installed")
+        pass  # Debug print removed
 
         top_layout.addWidget(self.layer_tree)
 
@@ -358,7 +355,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         if rt is None:
             # Testing mode outside 3ds Max - add dummy data
-            print("[POPULATE] rt is None - running in TEST MODE")
+            pass  # Debug print removed
             item1 = QtWidgets.QTreeWidgetItem(self.layer_tree, ["👁", "[TEST MODE] 0 (default)"])
             item2 = QtWidgets.QTreeWidgetItem(self.layer_tree, ["👁", "[TEST MODE] Layer 1"])
             item3 = QtWidgets.QTreeWidgetItem(self.layer_tree, ["👁", "[TEST MODE] Layer 2"])
@@ -366,7 +363,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             self.layer_tree.itemChanged.connect(self.on_layer_renamed)
             return
 
-        print("[POPULATE] rt is available - loading real layers")
+        pass  # Debug print removed
 
         try:
             # Get the layer manager from 3ds Max
@@ -374,7 +371,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
             # Get all layers and store their info
             layer_count = layer_manager.count
-            print(f"[DEBUG] Found {layer_count} layers in scene")
+            pass  # Debug print removed
 
             # Collect all layer data first
             layer_data = []
@@ -389,7 +386,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
             # Sort layers alphabetically by name
             layer_data.sort(key=lambda x: x['name'].lower())
-            print(f"[DEBUG] Sorted {len(layer_data)} layers alphabetically")
+            pass  # Debug print removed
 
             # Now add sorted layers to tree
             for data in layer_data:
@@ -397,7 +394,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 is_hidden = data['hidden']
                 is_current = data['current']
 
-                print(f"[DEBUG] Layer: '{layer_name}', hidden={is_hidden}, current={is_current}")
+                pass  # Debug print removed
 
                 # Add to tree with 3 columns: visibility icon, add selection icon, layer name
                 if self.use_native_icons:
@@ -432,7 +429,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 # Select the current/active layer
                 if is_current:
                     item.setSelected(True)
-                    print(f"[POPULATE] Selected current layer: {layer_name}")
+                    pass  # Debug print removed
 
         except Exception as e:
             # If layer access fails, show error
@@ -465,10 +462,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     item = self.layer_tree.topLevelItem(i)
                     if item.text(2) == current_layer_name:  # Column 2 is layer name
                         item.setSelected(True)
-                        print(f"[SELECT] Re-selected active layer: {current_layer_name}")
+                        pass  # Debug print removed
                         return
         except Exception as e:
-            print(f"[SELECT] Error selecting active layer: {e}")
+            pass  # Debug print removed
 
     def on_layer_clicked(self, item, column):
         """Handle layer click - toggle visibility, add selection, or set active layer"""
@@ -534,7 +531,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         item.setTextAlignment(0, QtCore.Qt.AlignCenter)
 
                     status = "hidden" if layer.ishidden else "visible"
-                    print(f"[LAYER] Set layer '{layer_name}' to {status}")
+                    pass  # Debug print removed
                     break
 
         except Exception as e:
@@ -552,7 +549,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             selected_objects = rt.selection
 
             if len(selected_objects) == 0:
-                print(f"[LAYER] No objects selected to add to layer '{layer_name}'")
+                pass  # Debug print removed
                 return
 
             # Find the target layer in 3ds Max by name
@@ -573,7 +570,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     target_layer.addNode(obj)
                     object_count += 1
 
-                print(f"[LAYER] Added {object_count} object(s) to layer '{layer_name}'")
+                pass  # Debug print removed
             else:
                 print(f"[ERROR] Layer '{layer_name}' not found")
 
@@ -597,7 +594,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 if layer and str(layer.name) == layer_name:
                     # Set this layer as the current layer
                     layer.current = True
-                    print(f"[LAYER] Set current layer to: {layer_name}")
+                    pass  # Debug print removed
                     break
 
         except Exception as e:
@@ -607,7 +604,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
     def on_layer_double_clicked(self, item, column):
         """Handle layer double-click - start inline rename"""
-        print("[RENAME] Double-click detected")
+        pass  # Debug print removed
 
         # Only rename on column 2 (name column), not icon columns
         if column != 2:
@@ -615,12 +612,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Don't process test mode items
         if item.text(2).startswith("[TEST MODE]"):
-            print("[RENAME] Skipping test mode item")
+            pass  # Debug print removed
             return
 
         # Store the original name before editing
         self.editing_layer_name = item.text(2)
-        print(f"[RENAME] Starting edit for layer: {self.editing_layer_name}")
+        pass  # Debug print removed
 
         # Block signals while making item editable to avoid premature itemChanged trigger
         self.layer_tree.blockSignals(True)
@@ -629,7 +626,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Now start editing (column 2 = name)
         self.layer_tree.editItem(item, 2)
-        print("[RENAME] Edit mode activated")
+        pass  # Debug print removed
 
     def on_layer_context_menu(self, position):
         """Handle right-click context menu on layer"""
@@ -650,14 +647,14 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
     def on_layer_renamed(self, item, column):
         """Handle layer rename after inline editing"""
-        print(f"[RENAME] on_layer_renamed called, column: {column}, editing_layer_name: {self.editing_layer_name}")
+        pass  # Debug print removed
 
         # Only process renames on column 2 (name column)
         if column != 2:
             return
 
         if rt is None or self.editing_layer_name is None:
-            print("[RENAME] Skipping - rt is None or not editing")
+            pass  # Debug print removed
             return
 
         try:
@@ -665,16 +662,16 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             new_name = item.text(2)
             old_name = self.editing_layer_name
 
-            print(f"[RENAME] Old name: '{old_name}', New name: '{new_name}'")
+            pass  # Debug print removed
 
             # Don't process test mode items
             if old_name.startswith("[TEST MODE]"):
-                print("[RENAME] Skipping test mode item")
+                pass  # Debug print removed
                 return
 
             # Only process if name actually changed
             if new_name != old_name and new_name:
-                print(f"[RENAME] Name changed, updating in 3ds Max")
+                pass  # Debug print removed
                 # Find the layer in 3ds Max by name
                 layer_manager = rt.layerManager
                 layer_count = layer_manager.count
@@ -684,13 +681,13 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     if layer and str(layer.name) == old_name:
                         # Rename the layer in 3ds Max
                         layer.setname(new_name)
-                        print(f"[LAYER] Renamed layer from '{old_name}' to '{new_name}'")
+                        pass  # Debug print removed
 
                         # Refresh the layer list to re-sort alphabetically
                         self.populate_layers()
                         break
             else:
-                print("[RENAME] Name unchanged or empty")
+                pass  # Debug print removed
 
             # Reset editing flag
             self.editing_layer_name = None
@@ -717,7 +714,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.sync_timer.timeout.connect(self.check_current_layer_sync)
         # Check every 500ms for current layer changes
         self.sync_timer.start(500)
-        print("[SYNC] Started layer sync timer (500ms)")
+        pass  # Debug print removed
 
     def check_current_layer_sync(self):
         """Check if the current layer or visibility states changed in Max and update UI"""
@@ -734,7 +731,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 current_layer_name = str(current_layer.name)
 
                 if current_layer_name != self.last_current_layer:
-                    print(f"[SYNC] Current layer changed from '{self.last_current_layer}' to '{current_layer_name}'")
+                    pass  # Debug print removed
                     self.last_current_layer = current_layer_name
                     # Update selection in tree
                     self.select_active_layer()
@@ -751,7 +748,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
                     # Check if visibility changed for this layer
                     if layer_name not in self.last_visibility_states or self.last_visibility_states[layer_name] != is_hidden:
-                        print(f"[SYNC] Visibility changed for '{layer_name}': hidden={is_hidden}")
+                        pass  # Debug print removed
                         self.last_visibility_states[layer_name] = is_hidden
                         visibility_changed = True
 
@@ -805,9 +802,9 @@ fn EskiLayerManagerSceneCallback = (
             # Try both possible callback names for layer current change
             try:
                 rt.callbacks.addScript(rt.Name("layerCurrent"), "EskiLayerManagerCurrentCallback()")
-                print("[CALLBACKS] Registered layerCurrent callback")
+                pass  # Debug print removed
             except:
-                print("[CALLBACKS] layerCurrent callback not available, trying alternatives")
+                pass  # Debug print removed
                 # Some Max versions might use different callback names
                 # We'll rely on the refresh from clicking in our UI instead
 
@@ -817,9 +814,9 @@ fn EskiLayerManagerSceneCallback = (
             rt.callbacks.addScript(rt.Name("systemPostNew"), "EskiLayerManagerSceneCallback()")
             # Note: postMerge callback not supported in 3ds Max 2026
 
-            print("[CALLBACKS] Layer change and scene callbacks registered")
+            pass  # Debug print removed
         except Exception as e:
-            print(f"[CALLBACKS] Failed to register callbacks: {e}")
+            pass  # Debug print removed
 
     def remove_callbacks(self):
         """Remove 3ds Max callbacks"""
@@ -836,9 +833,9 @@ fn EskiLayerManagerSceneCallback = (
             rt.callbacks.removeScripts(rt.Name("systemPostReset"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("systemPostNew"), id=rt.Name("EskiLayerManagerCallback"))
             # Note: postMerge callback not supported in 3ds Max 2026
-            print("[CALLBACKS] All callbacks removed")
+            pass  # Debug print removed
         except Exception as e:
-            print(f"[CALLBACKS] Failed to remove callbacks: {e}")
+            pass  # Debug print removed
 
     def save_position(self):
         """Save window position to 3ds Max scene and global settings"""
@@ -858,9 +855,9 @@ fn EskiLayerManagerSceneCallback = (
             # Also save to global preferences (INI-like storage)
             rt.setINISetting(rt.maxFilePath + rt.maxFileName + ".ini", "EskiLayerManager", "LastPosition", position_data)
 
-            print(f"[POSITION] Saved: {position_data}")
+            pass  # Debug print removed
         except Exception as e:
-            print(f"[POSITION] Error saving: {e}")
+            pass  # Debug print removed
 
     def restore_position(self):
         """Restore window position from scene or global settings"""
@@ -875,7 +872,7 @@ fn EskiLayerManagerSceneCallback = (
                 position_data = rt.fileProperties.findProperty(rt.Name("EskiLayerManagerPosition"))
                 if position_data:
                     position_data = str(position_data.value)
-                    print(f"[POSITION] Loaded from scene: {position_data}")
+                    pass  # Debug print removed
             except:
                 pass
 
@@ -884,7 +881,7 @@ fn EskiLayerManagerSceneCallback = (
                 try:
                     position_data = rt.getINISetting(rt.maxFilePath + rt.maxFileName + ".ini", "EskiLayerManager", "LastPosition")
                     if position_data and position_data != "":
-                        print(f"[POSITION] Loaded from global: {position_data}")
+                        pass  # Debug print removed
                 except:
                     pass
 
@@ -903,16 +900,16 @@ fn EskiLayerManagerSceneCallback = (
                     self.resize(width, height)
                     self.setFloating(is_floating)
 
-                    print(f"[POSITION] Restored position")
+                    pass  # Debug print removed
         except Exception as e:
-            print(f"[POSITION] Error restoring: {e}")
+            pass  # Debug print removed
 
     def closeEvent(self, event):
         """Handle close event"""
         # Stop sync timer
         if hasattr(self, 'sync_timer'):
             self.sync_timer.stop()
-            print("[SYNC] Stopped layer sync timer")
+            pass  # Debug print removed
 
         # Save position before closing
         self.save_position()

@@ -13,7 +13,9 @@
       "WebFetch(domain:forums.autodesk.com)",
       "WebFetch(domain:knowledge.autodesk.com)",
       "WebFetch(domain:www.scriptspot.com)",
-      "WebFetch(domain:mayoi.me)"
+      "WebFetch(domain:mayoi.me)",
+      "WebFetch(domain:stackoverflow.com)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
