@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.46"
+VERSION = "0.6.47"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -396,10 +396,59 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Set minimum size
         self.setMinimumSize(250, 400)
 
-        # Add refresh button
-        refresh_btn = QtWidgets.QPushButton("Refresh Layers")
+        # Create horizontal layout for buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.setAlignment(QtCore.Qt.AlignLeft)
+
+        # Add refresh button with icon
+        refresh_btn = QtWidgets.QPushButton()
         refresh_btn.clicked.connect(self.populate_layers)
-        top_layout.insertWidget(1, refresh_btn)
+        refresh_btn.setToolTip("Refresh Layers")
+        refresh_btn.setFixedSize(32, 32)  # Square button
+
+        # Try to load StateSets/Refresh icon
+        try:
+            if QTMAX_AVAILABLE:
+                import qtmax
+                refresh_icon = qtmax.LoadMaxMultiResIcon("StateSets/Refresh")
+                if refresh_icon and not refresh_icon.isNull():
+                    refresh_btn.setIcon(refresh_icon)
+                    refresh_btn.setIconSize(QtCore.QSize(24, 24))
+                else:
+                    # Fallback to text if icon not found
+                    refresh_btn.setText("R")
+            else:
+                refresh_btn.setText("R")
+        except:
+            refresh_btn.setText("R")
+
+        button_layout.addWidget(refresh_btn)
+
+        # Add create new layer button with icon
+        create_layer_btn = QtWidgets.QPushButton()
+        create_layer_btn.clicked.connect(self.create_new_layer)
+        create_layer_btn.setToolTip("Create New Layer")
+        create_layer_btn.setFixedSize(32, 32)  # Square button
+
+        # Try to load Layer/CreateNewLayer icon
+        try:
+            if QTMAX_AVAILABLE:
+                import qtmax
+                create_icon = qtmax.LoadMaxMultiResIcon("Layer/CreateNewLayer")
+                if create_icon and not create_icon.isNull():
+                    create_layer_btn.setIcon(create_icon)
+                    create_layer_btn.setIconSize(QtCore.QSize(24, 24))
+                else:
+                    # Fallback to text if icon not found
+                    create_layer_btn.setText("+")
+            else:
+                create_layer_btn.setText("+")
+        except:
+            create_layer_btn.setText("+")
+
+        button_layout.addWidget(create_layer_btn)
+
+        top_layout.insertLayout(1, button_layout)
 
         # Populate layers from 3ds Max
         self.populate_layers()
@@ -825,6 +874,24 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         except Exception as e:
             import traceback
             error_msg = f"Error setting active layer: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] {error_msg}")
+
+    def create_new_layer(self):
+        """Create a new layer in 3ds Max"""
+        if rt is None:
+            return
+
+        try:
+            # Create a new layer
+            layer_manager = rt.layerManager
+            new_layer = layer_manager.newLayerFromName("Layer")
+
+            # Refresh the layer list to show the new layer
+            self.populate_layers()
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Error creating new layer: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
 
     def on_layer_double_clicked(self, item, column):
