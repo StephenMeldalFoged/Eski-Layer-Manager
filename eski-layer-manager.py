@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.21"
+VERSION = "0.6.22"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -87,6 +87,27 @@ class VisibilityIconDelegate(QtWidgets.QStyledItemDelegate):
         else:
             # Use default rendering for other columns
             super(VisibilityIconDelegate, self).paint(painter, option, index)
+
+
+class CustomTreeWidget(QtWidgets.QTreeWidget):
+    """Custom QTreeWidget that only allows selection on column 3"""
+
+    def mousePressEvent(self, event):
+        """Intercept mouse press to prevent selection on columns 0, 1, 2"""
+        item = self.itemAt(event.pos())
+        if item:
+            column = self.columnAt(event.pos().x())
+            if column in [0, 1, 2]:
+                # Don't call parent's mousePressEvent for icon columns
+                # This prevents Qt from selecting the item
+                # But we still need to emit itemPressed and itemClicked signals manually
+                self.itemPressed.emit(item, column)
+                # Schedule itemClicked to fire after the press
+                QtCore.QTimer.singleShot(0, lambda: self.itemClicked.emit(item, column))
+                return
+
+        # For column 3 or empty space, use default behavior
+        super(CustomTreeWidget, self).mousePressEvent(event)
 
 
 class EskiLayerManager(QtWidgets.QDockWidget):
@@ -275,8 +296,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         layers_label.setStyleSheet("font-weight: bold; padding: 2px;")
         top_layout.addWidget(layers_label)
 
-        # Create tree widget for layers
-        self.layer_tree = QtWidgets.QTreeWidget()
+        # Create tree widget for layers (using custom widget that controls selection)
+        self.layer_tree = CustomTreeWidget()
         self.layer_tree.setHeaderLabels(["1", "2", "3", "4"])  # DEBUG: Column numbers to see which are highlighted
         self.layer_tree.setColumnWidth(0, 30)  # Arrow column width
         self.layer_tree.setColumnWidth(1, 40)  # Visibility icon column width
@@ -288,14 +309,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.setRootIsDecorated(False)
         self.layer_tree.setIndentation(20)  # Add indentation to show hierarchy
 
-        # Track if we're allowing selection changes
-        self._allow_selection_change = True
-
-        self.layer_tree.itemPressed.connect(self.on_layer_pressed)
         self.layer_tree.itemClicked.connect(self.on_layer_clicked)
         self.layer_tree.itemDoubleClicked.connect(self.on_layer_double_clicked)
         self.layer_tree.itemChanged.connect(self.on_layer_renamed)
-        self.layer_tree.itemSelectionChanged.connect(self.on_selection_changed)
         self.layer_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.layer_tree.customContextMenuRequested.connect(self.on_layer_context_menu)
 
@@ -511,9 +527,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         try:
-            # Allow this programmatic selection change
-            self._allow_selection_change = True
-
             # Clear all existing selections first (only one layer can be active)
             self.layer_tree.clearSelection()
 
@@ -554,17 +567,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         except Exception as e:
             pass  # Debug print removed
 
-    def on_selection_changed(self):
-        """Handle selection changes - restore active layer if change not allowed"""
-        if not self._allow_selection_change:
-            # Block this selection change and restore active layer
-            QtCore.QTimer.singleShot(0, self.select_active_layer)
-
-    def on_layer_pressed(self, item, column):
-        """Handle mouse press - decide if selection change is allowed"""
-        # Only allow selection changes when clicking column 3 (layer name)
-        self._allow_selection_change = (column == 3)
-
     def on_layer_clicked(self, item, column):
         """Handle layer click - toggle visibility, add selection, or set active layer"""
         if rt is None:
@@ -592,8 +594,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 # Add selected objects to this layer
                 self.add_selection_to_layer(layer_name)
             elif column == 3:
-                # Set as current layer
-                self._allow_selection_change = True
+                # Set as current layer (selection already handled by CustomTreeWidget)
                 self.set_current_layer(layer_name)
 
         except Exception as e:
