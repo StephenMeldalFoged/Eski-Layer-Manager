@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.47"
+VERSION = "0.6.48"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -430,20 +430,31 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         create_layer_btn.setToolTip("Create New Layer")
         create_layer_btn.setFixedSize(32, 32)  # Square button
 
-        # Try to load Layer/CreateNewLayer icon
-        try:
-            if QTMAX_AVAILABLE:
-                import qtmax
-                create_icon = qtmax.LoadMaxMultiResIcon("Layer/CreateNewLayer")
-                if create_icon and not create_icon.isNull():
-                    create_layer_btn.setIcon(create_icon)
-                    create_layer_btn.setIconSize(QtCore.QSize(24, 24))
-                else:
-                    # Fallback to text if icon not found
-                    create_layer_btn.setText("+")
-            else:
-                create_layer_btn.setText("+")
-        except:
+        # Try to load Layer icon - try multiple paths
+        icon_loaded = False
+        if QTMAX_AVAILABLE:
+            import qtmax
+            # Try multiple icon paths for create new layer
+            icon_paths = [
+                "Layer/Layer_NewLayer",
+                "Layer/CreateNewLayer",
+                "Layer/NewLayer",
+                "Layer/AddNewLayer",
+                "Ribbon/SceneExplorer/Layer_NewLayer"
+            ]
+            for icon_path in icon_paths:
+                try:
+                    create_icon = qtmax.LoadMaxMultiResIcon(icon_path)
+                    if create_icon and not create_icon.isNull():
+                        if len(create_icon.availableSizes()) > 0:
+                            create_layer_btn.setIcon(create_icon)
+                            create_layer_btn.setIconSize(QtCore.QSize(24, 24))
+                            icon_loaded = True
+                            break
+                except:
+                    continue
+
+        if not icon_loaded:
             create_layer_btn.setText("+")
 
         button_layout.addWidget(create_layer_btn)
