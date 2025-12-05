@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.5.0
+Version: 0.8.3
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.7.2"
+VERSION = "0.8.3"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -43,50 +43,97 @@ if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
     _layer_manager_instance = [None]
 
 
-class VisibilityIconDelegate(QtWidgets.QStyledItemDelegate):
+class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
     """
-    Custom delegate for rendering visibility icons in the tree widget
-    This gives us full control over icon rendering, fixing display issues in 3ds Max
+    Custom delegate for rendering inline icons (arrow, eye, +) and layer name in single column
+    Layout: [tree lines] [arrow] [eye] [+] [layer name]
     """
 
-    def __init__(self, parent=None):
-        super(VisibilityIconDelegate, self).__init__(parent)
+    def __init__(self, layer_manager, parent=None):
+        super(InlineIconDelegate, self).__init__(parent)
+        self.layer_manager = layer_manager
+        self.icon_size = 16
+        self.icon_spacing = 4
+        self.plus_icon_size = 18  # Bigger size for plus icon
+        self.plus_icon_spacing = 8  # Extra spacing before plus icon
 
     def paint(self, painter, option, index):
-        """Custom paint method for rendering icons and controlling selection highlight"""
-        # Remove selection highlighting for columns 0, 1, 2 (only column 3 should show selection)
-        if index.column() in [0, 1, 2]:
-            # Remove the Selected state flag to prevent highlighting
-            option.state &= ~QtWidgets.QStyle.State_Selected
+        """Custom paint method for rendering inline icons"""
+        painter.save()
 
-        if index.column() == 1:
-            # Column 1 is the visibility icon column
-            # Just use the option.rect as-is, don't try to expand it
-
-            # Try to get icon first (native icons)
-            icon = index.data(QtCore.Qt.DecorationRole)
-
-            if icon and isinstance(icon, QtGui.QIcon) and not icon.isNull():
-                # Draw native icon centered in the cell
-                painter.save()
-                icon.paint(painter, option.rect, QtCore.Qt.AlignCenter)
-                painter.restore()
-            else:
-                # Draw Unicode fallback text centered in the cell
-                text = index.data(QtCore.Qt.DisplayRole)
-                if text:
-                    painter.save()
-                    # Set font for Unicode emoji
-                    font = painter.font()
-                    font.setPointSize(14)
-                    font.setBold(True)
-                    painter.setFont(font)
-                    # Draw text centered
-                    painter.drawText(option.rect, QtCore.Qt.AlignCenter, str(text))
-                    painter.restore()
+        # Draw background and selection
+        if option.state & QtWidgets.QStyle.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+        elif index.row() % 2:
+            painter.fillRect(option.rect, option.palette.alternateBase())
         else:
-            # Use default rendering for other columns
-            super(VisibilityIconDelegate, self).paint(painter, option, index)
+            painter.fillRect(option.rect, option.palette.base())
+
+        # Get item data
+        item = self.layer_manager.layer_tree.itemFromIndex(index)
+        if not item:
+            painter.restore()
+            return
+
+        # Starting X position - use the visual rect which accounts for indentation
+        # option.rect gives us the item's visual rect in viewport coordinates
+        x = option.rect.left()
+        y = option.rect.top()
+        h = option.rect.height()
+
+        # Store click regions for later detection (in viewport coordinates)
+        if not hasattr(item, 'click_regions'):
+            item.click_regions = {}
+
+        # Store the current item rect Y position for coordinate reference (store value, not QRect object)
+        item.current_item_y = option.rect.y()
+
+        # Skip drawing custom arrow - Qt's built-in tree arrows are sufficient
+        # (We still store arrow data in UserRole but don't paint it)
+
+        # 1. Draw visibility icon (👁/✖/🔒)
+        vis_icon = item.data(0, QtCore.Qt.UserRole + 1)  # Store visibility icon
+        if vis_icon:
+            # Create rect in viewport coordinates
+            vis_rect = QtCore.QRect(x, y, self.icon_size + self.icon_spacing, h)
+            item.click_regions['visibility'] = vis_rect
+
+            if isinstance(vis_icon, QtGui.QIcon):
+                vis_icon.paint(painter, vis_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            else:
+                painter.setFont(QtGui.QFont(painter.font().family(), 10))
+                painter.drawText(vis_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, str(vis_icon))
+            x += self.icon_size + self.icon_spacing
+
+        # 2. Draw add selection icon (+) - bigger and with extra spacing
+        add_icon = item.data(0, QtCore.Qt.UserRole + 2)  # Store add icon
+        if add_icon:
+            # Add extra spacing before the plus icon
+            x += self.plus_icon_spacing
+
+            # Create rect in viewport coordinates (bigger rect for plus icon)
+            add_rect = QtCore.QRect(x, y, self.plus_icon_size, h)
+            item.click_regions['add_selection'] = add_rect
+
+            if isinstance(add_icon, QtGui.QIcon):
+                add_icon.paint(painter, add_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            else:
+                # Bigger font for plus icon
+                painter.setFont(QtGui.QFont(painter.font().family(), 12))
+                painter.drawText(add_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, str(add_icon))
+            x += self.plus_icon_size + self.icon_spacing
+
+        # 3. Draw layer name
+        layer_name = item.text(0)
+        name_rect = QtCore.QRect(x, y, option.rect.right() - x, h)
+        item.click_regions['name'] = name_rect
+
+        text_color = option.palette.highlightedText() if (option.state & QtWidgets.QStyle.State_Selected) else option.palette.text()
+        painter.setPen(text_color.color())
+        painter.setFont(option.font)
+        painter.drawText(name_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, layer_name)
+
+        painter.restore()
 
 
 class CustomTreeWidget(QtWidgets.QTreeWidget):
@@ -96,22 +143,8 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         super(CustomTreeWidget, self).__init__(parent)
         self.layer_manager = None  # Will be set by EskiLayerManager
 
-    def mousePressEvent(self, event):
-        """Intercept mouse press to prevent selection on columns 0, 1, 2"""
-        item = self.itemAt(event.pos())
-        if item:
-            column = self.columnAt(event.pos().x())
-            if column in [0, 1, 2]:
-                # Don't call parent's mousePressEvent for icon columns
-                # This prevents Qt from selecting the item
-                # But we still need to emit itemPressed and itemClicked signals manually
-                self.itemPressed.emit(item, column)
-                # Schedule itemClicked to fire after the press
-                QtCore.QTimer.singleShot(0, lambda: self.itemClicked.emit(item, column))
-                return
-
-        # For column 3 or empty space, use default behavior
-        super(CustomTreeWidget, self).mousePressEvent(event)
+    # No custom mousePressEvent needed in single column mode
+    # Qt's default handling works fine - itemClicked signal fires normally
 
     def dropEvent(self, event):
         """Handle drop event to reparent layers in 3ds Max"""
@@ -122,7 +155,7 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
             return
 
         dragged_item = dragged_items[0]
-        dragged_layer_name = dragged_item.text(3).lstrip()
+        dragged_layer_name = dragged_item.text(0)  # Single column - text(0) is layer name
 
         # Get drop position
         drop_indicator = self.dropIndicatorPosition()
@@ -131,7 +164,7 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         # Determine the new parent based on drop position
         new_parent_name = None
         if target_item:
-            target_layer_name = target_item.text(3).lstrip()
+            target_layer_name = target_item.text(0)  # Single column
 
             if drop_indicator == QtWidgets.QAbstractItemView.OnItem:
                 # Dropped ON item - make it a child
@@ -139,7 +172,7 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
             elif drop_indicator in [QtWidgets.QAbstractItemView.AboveItem, QtWidgets.QAbstractItemView.BelowItem]:
                 # Dropped ABOVE or BELOW item - make it a sibling (same parent as target)
                 if target_item.parent():
-                    new_parent_name = target_item.parent().text(3).lstrip()
+                    new_parent_name = target_item.parent().text(0)  # Single column
                 else:
                     new_parent_name = None  # Root level
         else:
@@ -155,6 +188,94 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         # Ignore the event to prevent Qt from doing its own tree manipulation
         # We handle everything through populate_layers() refresh
         event.ignore()
+
+    def drawBranches(self, painter, rect, index):
+        """Override to draw custom tree lines, horizontal connectors, and expand/collapse arrows"""
+        painter.save()
+
+        indent = self.indentation()
+        depth = 0
+        parent_idx = index.parent()
+        while parent_idx.isValid():
+            depth += 1
+            parent_idx = parent_idx.parent()
+
+        # Center Y position for horizontal line
+        center_y = rect.y() + rect.height() // 2
+
+        # Draw vertical lines for parent hierarchy
+        pen = QtGui.QPen(QtGui.QColor("#CCCCCC"), 1)  # Brighter gray
+        painter.setPen(pen)
+
+        # Draw vertical lines for each parent level
+        temp_parent = index.parent()
+        temp_depth = depth - 1
+        while temp_parent.isValid():
+            # Check if this parent has more siblings below
+            parent_of_parent = temp_parent.parent()
+            if parent_of_parent.isValid():
+                row = temp_parent.row()
+                sibling_count = self.model().rowCount(parent_of_parent)
+                if row < sibling_count - 1:  # Has siblings below
+                    x = temp_depth * indent + indent // 2
+                    painter.drawLine(x, rect.y(), x, rect.y() + rect.height())
+            elif temp_parent.row() < self.model().rowCount(QtCore.QModelIndex()) - 1:
+                # Root level with siblings below
+                x = temp_depth * indent + indent // 2
+                painter.drawLine(x, rect.y(), x, rect.y() + rect.height())
+
+            temp_depth -= 1
+            temp_parent = temp_parent.parent()
+
+        # Draw horizontal line to this item (centered vertically)
+        if depth > 0:
+            x_start = (depth - 1) * indent + indent // 2
+            x_end = depth * indent + 2
+            painter.drawLine(x_start, center_y, x_end, center_y)
+
+            # Draw vertical line from top to center for this item
+            x = (depth - 1) * indent + indent // 2
+
+            # Check if this item has siblings below
+            if index.parent().isValid():
+                row = index.row()
+                sibling_count = self.model().rowCount(index.parent())
+                if row < sibling_count - 1:  # Has siblings below
+                    painter.drawLine(x, rect.y(), x, center_y)
+                else:  # Last child
+                    painter.drawLine(x, rect.y(), x, center_y)
+            else:
+                # Root level
+                row = index.row()
+                sibling_count = self.model().rowCount(QtCore.QModelIndex())
+                if row < sibling_count - 1:
+                    painter.drawLine(x, rect.y(), x, center_y)
+                else:
+                    painter.drawLine(x, rect.y(), x, center_y)
+
+        # Draw expand/collapse arrow if this item has children
+        if self.model().hasChildren(index):
+            arrow_x = depth * indent + 4
+            arrow_y = center_y
+
+            # Set font for arrow
+            font = self.font()
+            font.setPointSize(8)
+            painter.setFont(font)
+
+            if self.isExpanded(index):
+                # Draw down arrow (▼)
+                arrow_text = "▼"
+            else:
+                # Draw right arrow (▶)
+                arrow_text = "▶"
+
+            # Draw the arrow text centered
+            fm = QtGui.QFontMetrics(font)
+            text_width = fm.horizontalAdvance(arrow_text)
+            painter.drawText(arrow_x, arrow_y + fm.ascent() // 2, arrow_text)
+
+        painter.restore()
 
 
 class EskiLayerManager(QtWidgets.QDockWidget):
@@ -197,6 +318,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Initialize UI
         self.init_ui()
+
+        # Set default size (taller window)
+        self.resize(350, 800)  # Width: 350px, Height: 800px (was default ~400px)
 
         # Restore window position
         self.restore_position()
@@ -366,30 +490,30 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Create tree widget for layers (using custom widget that controls selection)
         self.layer_tree = CustomTreeWidget()
         self.layer_tree.layer_manager = self  # Set reference for drag-and-drop
-        self.layer_tree.setHeaderLabels(["1", "2", "3", "4"])  # DEBUG: Column numbers to see which are highlighted
-        # Column 0: Arrow - auto-resize to fit content (handles indentation)
-        self.layer_tree.header().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-        # Column 1: Visibility - auto-resize to fit content
-        self.layer_tree.header().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
-        # Column 2: Add selection - auto-resize to fit content
-        self.layer_tree.header().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
-        self.layer_tree.header().setStretchLastSection(True)  # Make name column stretch
+        self.layer_tree.setHeaderLabels(["Layers"])  # Single column layout
+        self.layer_tree.header().setStretchLastSection(True)  # Stretch single column
+        self.layer_tree.header().setVisible(True)  # Show header
         self.layer_tree.setAlternatingRowColors(True)
 
-        # Disable automatic tree decoration since we have manual arrows in column 0
-        self.layer_tree.setRootIsDecorated(False)
-        self.layer_tree.setItemsExpandable(False)  # Disable Qt's automatic expand arrows
-        self.layer_tree.setIndentation(7)  # Add indentation to show hierarchy (1/3 of original 20px)
+        # Enable Qt's built-in tree decoration (arrows and connecting lines)
+        self.layer_tree.setRootIsDecorated(True)  # Show Qt's expand/collapse arrows
+        self.layer_tree.setItemsExpandable(True)  # Allow expand/collapse
+        self.layer_tree.setIndentation(20)  # Indentation for hierarchy
 
-        # Hide Qt's branch indicators completely using stylesheet
+        # Stylesheet for tree view (no custom branch drawing - handled by drawBranches override)
         self.layer_tree.setStyleSheet("""
-            QTreeView::branch {
-                background: transparent;
-                border: none;
+            QTreeView {
+                show-decoration-selected: 1;
             }
-            QTreeView::branch:has-children {
+
+            QTreeView::item {
+                padding: 2px;
+            }
+
+            /* Clear all branch styling - we draw everything in drawBranches */
+            QTreeView::branch {
+                border-image: none;
                 background: transparent;
-                border: none;
                 image: none;
             }
         """)
@@ -412,12 +536,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.setDropIndicatorShown(True)
         self.layer_tree.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
 
-        # Install custom delegate for all columns to control selection highlighting
-        # This gives us direct control over rendering and which columns show selection
-        self.custom_delegate = VisibilityIconDelegate(self.layer_tree)
-        for col in range(4):  # Apply to all 4 columns
-            self.layer_tree.setItemDelegateForColumn(col, self.custom_delegate)
-        pass  # Debug print removed
+        # Install custom delegate for inline icon rendering
+        self.custom_delegate = InlineIconDelegate(self, self.layer_tree)
+        self.layer_tree.setItemDelegate(self.custom_delegate)  # Apply to all columns
 
         top_layout.addWidget(self.layer_tree)
 
@@ -568,11 +689,24 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.clear()
 
         if rt is None:
-            # Testing mode outside 3ds Max - add dummy data with hierarchy
-            parent = QtWidgets.QTreeWidgetItem(self.layer_tree, ["▼", "👁", "+", "[TEST MODE] Parent Layer"])
-            child1 = QtWidgets.QTreeWidgetItem(parent, ["▶", "👁", "+", "[TEST MODE] Child 1"])
-            child2 = QtWidgets.QTreeWidgetItem(parent, ["▶", "👁", "+", "[TEST MODE] Child 2"])
-            root = QtWidgets.QTreeWidgetItem(self.layer_tree, ["▶", "👁", "+", "[TEST MODE] Root Layer"])
+            # Testing mode outside 3ds Max - add dummy data with hierarchy (single column)
+            parent = QtWidgets.QTreeWidgetItem(self.layer_tree, ["[TEST MODE] Parent Layer"])
+            parent.setData(0, QtCore.Qt.UserRole, "▼")  # Arrow
+            parent.setData(0, QtCore.Qt.UserRole + 1, "👁")  # Visibility
+            parent.setData(0, QtCore.Qt.UserRole + 2, "+")  # Add selection
+
+            child1 = QtWidgets.QTreeWidgetItem(parent, ["[TEST MODE] Child 1"])
+            child1.setData(0, QtCore.Qt.UserRole + 1, "👁")
+            child1.setData(0, QtCore.Qt.UserRole + 2, "+")
+
+            child2 = QtWidgets.QTreeWidgetItem(parent, ["[TEST MODE] Child 2"])
+            child2.setData(0, QtCore.Qt.UserRole + 1, "👁")
+            child2.setData(0, QtCore.Qt.UserRole + 2, "+")
+
+            root = QtWidgets.QTreeWidgetItem(self.layer_tree, ["[TEST MODE] Root Layer"])
+            root.setData(0, QtCore.Qt.UserRole + 1, "👁")
+            root.setData(0, QtCore.Qt.UserRole + 2, "+")
+
             parent.setExpanded(True)  # Expand parent by default
             # Reconnect signal
             self.layer_tree.itemChanged.connect(self.on_layer_renamed)
@@ -624,7 +758,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             self.layer_tree.itemChanged.connect(self.on_layer_renamed)
 
     def _add_layer_to_tree(self, layer, parent_item):
-        """Recursively add a layer and its children to the tree"""
+        """Recursively add a layer and its children to the tree (single column with inline icons)"""
         try:
             layer_name = str(layer.name)
             is_hidden = layer.ishidden
@@ -639,29 +773,23 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             except:
                 has_children = False
 
-            # Column 0: Arrow (▼ solid down if has children, ▷ hollow right if not)
-            # Column 1: Visibility icon
-            # Column 2: Add selection icon
-            # Column 3: Layer name
-            arrow = "▼" if has_children else "▷"
-
-            # Create tree item (as child of parent_item if provided, else root)
-            # Calculate depth for proper indentation in column 4
-            depth = 0
-            temp_parent = parent_item
-            while temp_parent:
-                depth += 1
-                temp_parent = temp_parent.parent()
-
-            # Add extra spacing based on depth (4 spaces per level)
-            display_name = ("    " * depth) + layer_name
-
+            # Create tree item - single column with just the layer name
             if parent_item:
-                item = QtWidgets.QTreeWidgetItem(parent_item, [arrow, "", "", display_name])
+                item = QtWidgets.QTreeWidgetItem(parent_item, [layer_name])
             else:
-                item = QtWidgets.QTreeWidgetItem(self.layer_tree, [arrow, "", "", display_name])
+                item = QtWidgets.QTreeWidgetItem(self.layer_tree, [layer_name])
 
-            # Set visibility icon
+            # Store icon data in UserRole for delegate to paint
+            # UserRole: arrow (▼/▷)
+            # UserRole+1: visibility icon
+            # UserRole+2: add selection icon
+
+            # 1. Store arrow (only if has children)
+            if has_children:
+                arrow = "▼"  # Will be shown as expanded by default
+                item.setData(0, QtCore.Qt.UserRole, arrow)
+
+            # 2. Store visibility icon
             # Check if parent is hidden (child inherits parent's hidden state)
             parent_hidden = False
             if parent_item:
@@ -683,46 +811,22 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 else:
                     # Layer is visible
                     icon = self.icon_visible
-                item.setIcon(1, icon)
-                item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+                item.setData(0, QtCore.Qt.UserRole + 1, icon)
             else:
                 # Determine icon based on visibility state
                 if parent_hidden:
-                    # Parent is hidden, so child is hidden by inheritance
-                    icon_text = "✕"  # Light X - hidden because parent is hidden
+                    icon_text = "🔒"  # Lock - hidden because parent is hidden
                 elif is_hidden:
-                    # Layer is directly hidden
                     icon_text = "✖"  # Heavy X
                 else:
-                    # Layer is visible
                     icon_text = "👁"
+                item.setData(0, QtCore.Qt.UserRole + 1, icon_text)
 
-                item.setText(1, icon_text)
-                item.setTextAlignment(1, QtCore.Qt.AlignCenter)
-                font = item.font(1)
-                font.setPointSize(10)  # Reduced from 12 to 10
-                font.setBold(True)
-                item.setFont(1, font)
-
-            # Add arrow styling in column 0 - left aligned with indentation
-            item.setTextAlignment(0, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            arrow_font = item.font(0)
-            # Hollow right arrow (▷) is 14pt, down arrow (▼) is 10pt
-            arrow_font.setPointSize(14 if arrow == "▷" else 10)
-            arrow_font.setBold(False)  # Not bold
-            item.setFont(0, arrow_font)
-
-            # Add selection icon in column 2
+            # 3. Store add selection icon
             if self.use_native_add_icon:
-                item.setIcon(2, self.icon_add_selection)
-                item.setTextAlignment(2, QtCore.Qt.AlignCenter)
+                item.setData(0, QtCore.Qt.UserRole + 2, self.icon_add_selection)
             else:
-                item.setText(2, "+")
-                item.setTextAlignment(2, QtCore.Qt.AlignCenter)
-                font = item.font(2)
-                font.setPointSize(14)
-                font.setBold(True)
-                item.setFont(2, font)
+                item.setData(0, QtCore.Qt.UserRole + 2, "+")
 
             # Select the current/active layer
             if is_current:
@@ -736,7 +840,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 # Get all children and sort them alphabetically
                 children = []
                 for i in range(num_children):
-                    child = layer.getChild(i + 1)  # Note: getChild uses 1-based index (MAXScript convention)
+                    child = layer.getChild(i + 1)  # Note: getChild uses 1-based index
                     if child:
                         children.append(child)
 
@@ -774,8 +878,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         # Check top-level items
                         for i in range(self.layer_tree.topLevelItemCount()):
                             item = self.layer_tree.topLevelItem(i)
-                            # Strip spaces from display name for comparison
-                            if item.text(3).lstrip() == current_layer_name:  # Column 3 is layer name
+                            # Single column - text(0) is layer name
+                            if item.text(0) == current_layer_name:
                                 item.setSelected(True)
                                 return True
                             # Check children recursively
@@ -786,8 +890,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 def find_and_select_children(parent_item):
                     for i in range(parent_item.childCount()):
                         child = parent_item.child(i)
-                        # Strip spaces from display name for comparison
-                        if child.text(3).lstrip() == current_layer_name:  # Column 3 is layer name
+                        # Single column - text(0) is layer name
+                        if child.text(0) == current_layer_name:
                             child.setSelected(True)
                             return True
                         # Check nested children
@@ -801,35 +905,69 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             pass  # Debug print removed
 
     def on_layer_clicked(self, item, column):
-        """Handle layer click - toggle visibility, add selection, or set active layer"""
+        """Handle layer click - toggle visibility, add selection, or set active layer (single column)"""
         if rt is None:
             return
 
         try:
-            # Get the layer name from the tree item (column 3)
-            # Strip leading spaces (we add spaces for visual indentation)
-            layer_name = item.text(3).lstrip()
+            # Get the layer name from the tree item (single column)
+            layer_name = item.text(0)
 
             # Don't process test mode items
             if layer_name.startswith("[TEST MODE]"):
                 return
 
-            # Column 0 = arrow (expand/collapse)
-            # Column 1 = visibility icon (toggle visibility)
-            # Column 2 = add selection icon (assign selected objects to layer)
-            # Column 3 = layer name (set as current layer)
-            if column == 0:
-                # Arrow click - expand/collapse hierarchy
-                self.toggle_expand_collapse(item)
-            elif column == 1:
-                # Toggle visibility only - do NOT select row or activate layer
-                self.toggle_layer_visibility(item, layer_name)
-            elif column == 2:
-                # Add selected objects to this layer
-                self.add_selection_to_layer(layer_name)
-            elif column == 3:
-                # Set as current layer (selection already handled by CustomTreeWidget)
-                self.set_current_layer(layer_name)
+            # Get click position in viewport coordinates
+            cursor_pos = self.layer_tree.viewport().mapFromGlobal(QtGui.QCursor.pos())
+            print(f"[CLICK DEBUG] Layer: {layer_name}, Cursor pos: {cursor_pos.x()}, {cursor_pos.y()}")
+
+            # Get the visual rect for this item to get current Y position (accounting for scroll)
+            index = self.layer_tree.indexFromItem(item)
+            visual_rect = self.layer_tree.visualRect(index)
+            print(f"[CLICK DEBUG] Visual rect: {visual_rect.x()}, {visual_rect.y()}, {visual_rect.width()}, {visual_rect.height()}")
+
+            # Check if item has click regions (set by delegate during last paint)
+            if hasattr(item, 'click_regions') and hasattr(item, 'current_item_y'):
+                print(f"[CLICK DEBUG] Has click_regions: {list(item.click_regions.keys())}")
+                # Adjust click regions to current visual position (in case of scrolling)
+                # The stored regions use the Y from paint time, we need current Y
+                y_offset = visual_rect.y() - item.current_item_y
+                print(f"[CLICK DEBUG] Y offset: {y_offset}, stored Y: {item.current_item_y}, current Y: {visual_rect.y()}")
+
+                # Check which region was clicked
+                # (Skip arrow - Qt's built-in tree arrows handle expand/collapse)
+                if 'visibility' in item.click_regions:
+                    vis_rect = item.click_regions['visibility'].translated(0, y_offset)
+                    print(f"[CLICK DEBUG] Vis rect: {vis_rect.x()}, {vis_rect.y()}, {vis_rect.width()}, {vis_rect.height()}")
+                    if vis_rect.contains(cursor_pos):
+                        print(f"[CLICK DEBUG] CLICKED VISIBILITY!")
+                        # Toggle visibility only - do NOT select row or activate layer
+                        self.toggle_layer_visibility(item, layer_name)
+                        return
+
+                if 'add_selection' in item.click_regions:
+                    add_rect = item.click_regions['add_selection'].translated(0, y_offset)
+                    print(f"[CLICK DEBUG] Add rect: {add_rect.x()}, {add_rect.y()}, {add_rect.width()}, {add_rect.height()}")
+                    if add_rect.contains(cursor_pos):
+                        print(f"[CLICK DEBUG] CLICKED ADD SELECTION!")
+                        # Add selected objects to this layer
+                        self.add_selection_to_layer(layer_name)
+                        return
+
+                if 'name' in item.click_regions:
+                    name_rect = item.click_regions['name'].translated(0, y_offset)
+                    print(f"[CLICK DEBUG] Name rect: {name_rect.x()}, {name_rect.y()}, {name_rect.width()}, {name_rect.height()}")
+                    if name_rect.contains(cursor_pos):
+                        print(f"[CLICK DEBUG] CLICKED NAME!")
+                        # Set as current layer (selection already handled by CustomTreeWidget)
+                        self.set_current_layer(layer_name)
+                        return
+            else:
+                print(f"[CLICK DEBUG] No click_regions found!")
+
+            # Fallback - if no regions matched, treat as name click
+            print(f"[CLICK DEBUG] Fallback to name click")
+            self.set_current_layer(layer_name)
 
         except Exception as e:
             import traceback
@@ -864,27 +1002,31 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     return
 
                 # Toggle visibility
-                print(f"[DEBUG] Toggling '{layer_name}' from {layer.ishidden} to {not layer.ishidden}")
+                print(f"[VISIBILITY] Toggling '{layer_name}' from ishidden={layer.ishidden} to ishidden={not layer.ishidden}")
                 layer.ishidden = not layer.ishidden
+                print(f"[VISIBILITY] After toggle: '{layer_name}' ishidden={layer.ishidden}")
 
-                # Update icon in column 1 (native if available, Unicode fallback otherwise)
+                # Update icon in UserRole+1 (native if available, Unicode fallback otherwise)
                 if self.use_native_icons:
-                    item.setIcon(1, self.icon_hidden if layer.ishidden else self.icon_visible)
-                    item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+                    item.setData(0, QtCore.Qt.UserRole + 1, self.icon_hidden if layer.ishidden else self.icon_visible)
                 else:
                     new_icon_text = "✖" if layer.ishidden else "👁"
-                    item.setText(1, new_icon_text)
-                    item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+                    item.setData(0, QtCore.Qt.UserRole + 1, new_icon_text)
+
+                # Trigger repaint
+                self.layer_tree.update(self.layer_tree.indexFromItem(item))
 
                 status = "hidden" if layer.ishidden else "visible"
-                pass  # Debug print removed
+                print(f"[VISIBILITY] Layer '{layer_name}' is now {status}")
 
                 # If this layer has children, refresh the entire tree to update their icons
                 try:
-                    if layer.getNumChildren() > 0:
+                    num_children = layer.getNumChildren()
+                    if num_children > 0:
+                        print(f"[VISIBILITY] Layer '{layer_name}' has {num_children} children, refreshing tree...")
                         self.populate_layers()
-                except:
-                    pass
+                except Exception as e:
+                    print(f"[VISIBILITY] Error checking children: {e}")
 
         except Exception as e:
             import traceback
@@ -1054,15 +1196,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         is_expanded = item.isExpanded()
         item.setExpanded(not is_expanded)
 
-        # Update arrow icon: ▼ when expanded, ▷ when collapsed
+        # Update arrow icon in UserRole: ▼ when expanded, ▷ when collapsed
         new_arrow = "▷" if is_expanded else "▼"
-        item.setText(0, new_arrow)
+        item.setData(0, QtCore.Qt.UserRole, new_arrow)
 
-        # Update arrow font size (▷ is 14pt, ▼ is 10pt)
-        arrow_font = item.font(0)
-        arrow_font.setPointSize(14 if new_arrow == "▷" else 10)
-        arrow_font.setBold(False)
-        item.setFont(0, arrow_font)
+        # Trigger repaint to show new arrow
+        self.layer_tree.update(self.layer_tree.indexFromItem(item))
 
     def reparent_layer(self, layer_name, new_parent_name):
         """Reparent a layer in 3ds Max"""
@@ -1118,30 +1257,47 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             print(f"[ERROR] {error_msg}")
 
     def on_layer_double_clicked(self, item, column):
-        """Handle layer double-click - start inline rename"""
-        pass  # Debug print removed
-
-        # Only rename on column 3 (name column), not other columns
-        if column != 3:
+        """Handle layer double-click - start inline rename (single column layout)"""
+        if rt is None:
             return
 
+        # Get click position to check if we're clicking on the name area (viewport coordinates)
+        cursor_pos = self.layer_tree.viewport().mapFromGlobal(QtGui.QCursor.pos())
+
+        # Get the visual rect for this item
+        index = self.layer_tree.indexFromItem(item)
+        visual_rect = self.layer_tree.visualRect(index)
+
+        # Only rename if clicking in the name region, not on icons
+        if hasattr(item, 'click_regions') and hasattr(item, 'current_item_y'):
+            y_offset = visual_rect.y() - item.current_item_y
+
+            # Check if clicking on visibility or add selection icons - if so, don't rename
+            if 'visibility' in item.click_regions:
+                vis_rect = item.click_regions['visibility'].translated(0, y_offset)
+                if vis_rect.contains(cursor_pos):
+                    return  # Don't rename when clicking eye icon
+
+            if 'add_selection' in item.click_regions:
+                add_rect = item.click_regions['add_selection'].translated(0, y_offset)
+                if add_rect.contains(cursor_pos):
+                    return  # Don't rename when clicking + icon
+
         # Don't process test mode items
-        if item.text(3).startswith("[TEST MODE]"):
-            pass  # Debug print removed
+        layer_name = item.text(0)
+        if layer_name.startswith("[TEST MODE]"):
             return
 
         # Store the original name before editing
-        self.editing_layer_name = item.text(3)
-        pass  # Debug print removed
+        self.editing_layer_name = layer_name
 
         # Block signals while making item editable to avoid premature itemChanged trigger
         self.layer_tree.blockSignals(True)
         item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
         self.layer_tree.blockSignals(False)
 
-        # Now start editing (column 2 = name)
-        self.layer_tree.editItem(item, 2)
-        pass  # Debug print removed
+        # Now start editing (column 0 = single column with name)
+        self.layer_tree.editItem(item, 0)
 
     def on_layer_context_menu(self, position):
         """Handle right-click context menu on layer"""
@@ -1157,24 +1313,21 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         action = menu.exec(self.layer_tree.viewport().mapToGlobal(position))
 
         if action == rename_action:
-            # Trigger inline rename on column 3 (name column)
-            self.on_layer_double_clicked(item, 3)
+            # Trigger inline rename on column 0 (single column with name)
+            self.on_layer_double_clicked(item, 0)
 
     def on_layer_renamed(self, item, column):
-        """Handle layer rename after inline editing"""
-        pass  # Debug print removed
-
-        # Only process renames on column 3 (name column)
-        if column != 3:
+        """Handle layer rename after inline editing (single column layout)"""
+        # Only process renames on column 0 (single column with name)
+        if column != 0:
             return
 
         if rt is None or self.editing_layer_name is None:
-            pass  # Debug print removed
             return
 
         try:
-            # Get the new name from the item (column 3)
-            new_name = item.text(3)
+            # Get the new name from the item (column 0)
+            new_name = item.text(0)
             old_name = self.editing_layer_name
 
             pass  # Debug print removed

@@ -3,7 +3,7 @@
 
 (
     -- Version of the installer
-    local installerVersion = "0.7.0"
+    local installerVersion = "0.8.2"
 
     -- Function to check if macro file exists
     fn macroExists = (
