@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.57"
+VERSION = "0.6.58"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -760,13 +760,13 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             if layer_name.startswith("[TEST MODE]"):
                 return
 
-            # Column 0 = arrow (expand/collapse - will implement later)
+            # Column 0 = arrow (expand/collapse)
             # Column 1 = visibility icon (toggle visibility)
             # Column 2 = add selection icon (assign selected objects to layer)
             # Column 3 = layer name (set as current layer)
             if column == 0:
-                # Arrow click - expand/collapse (TODO: implement hierarchy)
-                pass
+                # Arrow click - expand/collapse hierarchy
+                self.toggle_expand_collapse(item)
             elif column == 1:
                 # Toggle visibility only - do NOT select row or activate layer
                 self.toggle_layer_visibility(item, layer_name)
@@ -986,6 +986,27 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             import traceback
             error_msg = f"Error deleting layer: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
+
+    def toggle_expand_collapse(self, item):
+        """Toggle expand/collapse state of a layer with children"""
+        # Check if this layer has children
+        if item.childCount() == 0:
+            # No children, nothing to expand/collapse
+            return
+
+        # Toggle expanded state
+        is_expanded = item.isExpanded()
+        item.setExpanded(not is_expanded)
+
+        # Update arrow icon: ▼ when expanded, ▷ when collapsed
+        new_arrow = "▷" if is_expanded else "▼"
+        item.setText(0, new_arrow)
+
+        # Update arrow font size (▷ is 14pt, ▼ is 10pt)
+        arrow_font = item.font(0)
+        arrow_font.setPointSize(14 if new_arrow == "▷" else 10)
+        arrow_font.setBold(False)
+        item.setFont(0, arrow_font)
 
     def on_layer_double_clicked(self, item, column):
         """Handle layer double-click - start inline rename"""
