@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.49"
+VERSION = "0.6.50"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -895,16 +895,23 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
     def create_new_layer(self):
         """Create a new layer in 3ds Max"""
+        print("[DEBUG] create_new_layer() called")
+
         if rt is None:
+            print("[DEBUG] rt is None, cannot create layer")
             return
 
         try:
+            print("[DEBUG] Attempting to create new layer...")
             # Create a new layer
             layer_manager = rt.layerManager
             new_layer = layer_manager.newLayerFromName("Layer")
+            print(f"[DEBUG] Created new layer: {new_layer.name if new_layer else 'None'}")
 
             # Refresh the layer list to show the new layer
+            print("[DEBUG] Refreshing layer list...")
             self.populate_layers()
+            print("[DEBUG] Layer list refreshed")
 
         except Exception as e:
             import traceback
