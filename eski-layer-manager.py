@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.58"
+VERSION = "0.6.60"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -968,8 +968,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
             if layer:
                 # Check if layer has any objects
-                if layer.nodes and len(layer.nodes) > 0:
-                    print(f"[ERROR] Cannot delete layer '{layer_name}' - it contains {len(layer.nodes)} object(s)")
+                node_count = len(layer.nodes) if layer.nodes else 0
+
+                if layer.nodes and node_count > 0:
+                    print(f"[ERROR] Cannot delete layer '{layer_name}' - it contains {node_count} object(s)")
                     return
 
                 # Delete the layer
