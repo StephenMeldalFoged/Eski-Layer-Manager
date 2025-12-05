@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.36"
+VERSION = "0.6.41"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -161,6 +161,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         """Load native 3ds Max visibility icons using Qt resource system"""
         self.icon_visible = None
         self.icon_hidden = None
+        self.icon_hidden_light = None  # Light version for inherited hidden state
         self.use_native_icons = False
 
         # Try using qtmax.LoadMaxMultiResIcon first (official method)
@@ -186,6 +187,16 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         if len(visible_icon.availableSizes()) > 0 and len(hidden_icon.availableSizes()) > 0:
                             self.icon_visible = visible_icon
                             self.icon_hidden = hidden_icon
+
+                            # Try to load TreeView hidden icon for inherited hidden state
+                            try:
+                                hidden_light_icon = qtmax.LoadMaxMultiResIcon("TrackView/TreeView/Hidden")
+                                if hidden_light_icon and not hidden_light_icon.isNull():
+                                    if len(hidden_light_icon.availableSizes()) > 0:
+                                        self.icon_hidden_light = hidden_light_icon
+                            except:
+                                pass
+
                             self.use_native_icons = True
                             pass  # Debug print removed
                             pass  # Debug print removed
@@ -224,6 +235,15 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 if len(visible_icon.availableSizes()) > 0 and len(hidden_icon.availableSizes()) > 0:
                     self.icon_visible = visible_icon
                     self.icon_hidden = hidden_icon
+
+                    # Try to load TreeView hidden icon for inherited hidden state
+                    try:
+                        hidden_light_icon = QtGui.QIcon(":/TrackView/TreeView/Hidden_16")
+                        if not hidden_light_icon.isNull() and len(hidden_light_icon.availableSizes()) > 0:
+                            self.icon_hidden_light = hidden_light_icon
+                    except:
+                        pass
+
                     self.use_native_icons = True
                     pass  # Debug print removed
                     return
@@ -489,11 +509,41 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 item = QtWidgets.QTreeWidgetItem(self.layer_tree, [arrow, "", "", display_name])
 
             # Set visibility icon
+            # Check if parent is hidden (child inherits parent's hidden state)
+            parent_hidden = False
+            if parent_item:
+                try:
+                    parent_layer = layer.getParent()
+                    if parent_layer and str(parent_layer) != "undefined":
+                        parent_hidden = parent_layer.ishidden
+                except:
+                    pass
+
             if self.use_native_icons:
-                item.setIcon(1, self.icon_hidden if is_hidden else self.icon_visible)
+                # Choose icon based on visibility state
+                if parent_hidden and self.icon_hidden_light:
+                    # Parent is hidden - use light/disabled hidden icon
+                    icon = self.icon_hidden_light
+                elif is_hidden:
+                    # Layer is directly hidden
+                    icon = self.icon_hidden
+                else:
+                    # Layer is visible
+                    icon = self.icon_visible
+                item.setIcon(1, icon)
                 item.setTextAlignment(1, QtCore.Qt.AlignCenter)
             else:
-                icon_text = "👁" if not is_hidden else "✖"
+                # Determine icon based on visibility state
+                if parent_hidden:
+                    # Parent is hidden, so child is hidden by inheritance
+                    icon_text = "✕"  # Light X - hidden because parent is hidden
+                elif is_hidden:
+                    # Layer is directly hidden
+                    icon_text = "✖"  # Heavy X
+                else:
+                    # Layer is visible
+                    icon_text = "👁"
+
                 item.setText(1, icon_text)
                 item.setTextAlignment(1, QtCore.Qt.AlignCenter)
                 font = item.font(1)
@@ -636,33 +686,87 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         try:
-            # Find the layer in 3ds Max by name
-            layer_manager = rt.layerManager
-            layer_count = layer_manager.count
+            # Find the layer in 3ds Max by name (search recursively for nested layers)
+            layer = self._find_layer_by_name(layer_name)
 
-            for i in range(layer_count):
-                layer = layer_manager.getLayer(i)
-                if layer and str(layer.name) == layer_name:
-                    # Toggle visibility
-                    layer.ishidden = not layer.ishidden
+            if layer:
+                # Check if parent is hidden
+                parent_hidden = False
+                try:
+                    parent_layer = layer.getParent()
+                    if parent_layer and str(parent_layer) != "undefined":
+                        parent_hidden = parent_layer.ishidden
+                except:
+                    pass
 
-                    # Update icon in column 1 (native if available, Unicode fallback otherwise)
-                    if self.use_native_icons:
-                        item.setIcon(1, self.icon_hidden if layer.ishidden else self.icon_visible)
-                        item.setTextAlignment(1, QtCore.Qt.AlignCenter)
-                    else:
-                        new_icon_text = "✖" if layer.ishidden else "👁"
-                        item.setText(1, new_icon_text)
-                        item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+                # If parent is hidden, don't allow toggling (child follows parent)
+                if parent_hidden:
+                    return
 
-                    status = "hidden" if layer.ishidden else "visible"
-                    pass  # Debug print removed
-                    break
+                # Toggle visibility
+                layer.ishidden = not layer.ishidden
+
+                # Update icon in column 1 (native if available, Unicode fallback otherwise)
+                if self.use_native_icons:
+                    item.setIcon(1, self.icon_hidden if layer.ishidden else self.icon_visible)
+                    item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+                else:
+                    new_icon_text = "✖" if layer.ishidden else "👁"
+                    item.setText(1, new_icon_text)
+                    item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+
+                status = "hidden" if layer.ishidden else "visible"
+                pass  # Debug print removed
+
+                # If this layer has children, refresh the entire tree to update their icons
+                try:
+                    if layer.getNumChildren() > 0:
+                        self.populate_layers()
+                except:
+                    pass
 
         except Exception as e:
             import traceback
             error_msg = f"Error toggling layer visibility: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
+
+    def _find_layer_by_name(self, layer_name):
+        """Recursively search for a layer by name in the entire layer hierarchy"""
+        if rt is None:
+            return None
+
+        layer_manager = rt.layerManager
+        layer_count = layer_manager.count
+
+        # Helper function to search recursively
+        def search_children(parent_layer):
+            try:
+                num_children = parent_layer.getNumChildren()
+                for i in range(num_children):
+                    child = parent_layer.getChild(i + 1)  # 1-based index
+                    if child:
+                        if str(child.name) == layer_name:
+                            return child
+                        # Recursively search this child's children
+                        result = search_children(child)
+                        if result:
+                            return result
+            except:
+                pass
+            return None
+
+        # First check root level layers
+        for i in range(layer_count):
+            layer = layer_manager.getLayer(i)
+            if layer:
+                if str(layer.name) == layer_name:
+                    return layer
+                # Search this layer's children
+                result = search_children(layer)
+                if result:
+                    return result
+
+        return None
 
     def add_selection_to_layer(self, layer_name):
         """Add all currently selected objects to the specified layer"""
@@ -677,16 +781,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 pass  # Debug print removed
                 return
 
-            # Find the target layer in 3ds Max by name
-            layer_manager = rt.layerManager
-            layer_count = layer_manager.count
-            target_layer = None
-
-            for i in range(layer_count):
-                layer = layer_manager.getLayer(i)
-                if layer and str(layer.name) == layer_name:
-                    target_layer = layer
-                    break
+            # Find the target layer (search recursively for nested layers)
+            target_layer = self._find_layer_by_name(layer_name)
 
             if target_layer:
                 # Assign all selected objects to this layer
@@ -710,17 +806,13 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         try:
-            # Find the layer in 3ds Max by name
-            layer_manager = rt.layerManager
-            layer_count = layer_manager.count
+            # Find the layer (search recursively for nested layers)
+            layer = self._find_layer_by_name(layer_name)
 
-            for i in range(layer_count):
-                layer = layer_manager.getLayer(i)
-                if layer and str(layer.name) == layer_name:
-                    # Set this layer as the current layer
-                    layer.current = True
-                    pass  # Debug print removed
-                    break
+            if layer:
+                # Set this layer as the current layer
+                layer.current = True
+                pass  # Debug print removed
 
         except Exception as e:
             import traceback
