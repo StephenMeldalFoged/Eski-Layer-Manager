@@ -15,7 +15,8 @@
       "WebFetch(domain:www.scriptspot.com)",
       "WebFetch(domain:mayoi.me)",
       "WebFetch(domain:stackoverflow.com)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [],
     "ask": []
