@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.8.3
+Version: 0.9.0
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.8.3"
+VERSION = "0.9.0"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -57,14 +57,49 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
         self.plus_icon_size = 18  # Bigger size for plus icon
         self.plus_icon_spacing = 8  # Extra spacing before plus icon
 
+    def _get_visual_row_number(self, index):
+        """Calculate the visual row number by counting all visible rows from top"""
+        count = 0
+
+        def count_rows_before(idx):
+            nonlocal count
+            parent = idx.parent()
+
+            # Count siblings before this item
+            for row in range(idx.row()):
+                count += 1
+                sibling = idx.sibling(row, 0)
+                # If sibling is expanded, count its children too
+                if self.layer_manager.layer_tree.isExpanded(sibling):
+                    count_children(sibling)
+
+            # Recursively count parent's position
+            if parent.isValid():
+                count += 1  # Count the parent itself
+                count_rows_before(parent)
+
+        def count_children(parent_idx):
+            nonlocal count
+            model = parent_idx.model()
+            row_count = model.rowCount(parent_idx)
+            for row in range(row_count):
+                count += 1
+                child_idx = model.index(row, 0, parent_idx)
+                if self.layer_manager.layer_tree.isExpanded(child_idx):
+                    count_children(child_idx)
+
+        count_rows_before(index)
+        return count
+
     def paint(self, painter, option, index):
         """Custom paint method for rendering inline icons"""
         painter.save()
 
-        # Draw background and selection
-        if option.state & QtWidgets.QStyle.State_Selected:
-            painter.fillRect(option.rect, option.palette.highlight())
-        elif index.row() % 2:
+        # Calculate visual row number (counting all visible rows from top)
+        visual_row = self._get_visual_row_number(index)
+
+        # Draw background (alternating rows) - NO full row selection highlight
+        if visual_row % 2:
             painter.fillRect(option.rect, option.palette.alternateBase())
         else:
             painter.fillRect(option.rect, option.palette.base())
@@ -123,15 +158,28 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
                 painter.drawText(add_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, str(add_icon))
             x += self.plus_icon_size + self.icon_spacing
 
-        # 3. Draw layer name
+        # 3. Draw layer name with custom highlight if selected
         layer_name = item.text(0)
-        name_rect = QtCore.QRect(x, y, option.rect.right() - x, h)
+
+        # Calculate text width for tight highlight
+        font_metrics = QtGui.QFontMetrics(option.font)
+        text_width = font_metrics.horizontalAdvance(layer_name)
+
+        # Create tight rect just for the text
+        text_rect = QtCore.QRect(x, y, text_width + 8, h)  # +8 for small padding
+        name_rect = QtCore.QRect(x, y, option.rect.right() - x, h)  # Full clickable area
         item.click_regions['name'] = name_rect
 
-        text_color = option.palette.highlightedText() if (option.state & QtWidgets.QStyle.State_Selected) else option.palette.text()
-        painter.setPen(text_color.color())
+        # Draw deep teal highlight behind text if selected
+        if option.state & QtWidgets.QStyle.State_Selected:
+            teal_color = QtGui.QColor(0, 128, 128)  # Deep teal
+            painter.fillRect(text_rect, teal_color)
+            painter.setPen(QtGui.QColor(255, 255, 255))  # White text on teal
+        else:
+            painter.setPen(option.palette.text().color())
+
         painter.setFont(option.font)
-        painter.drawText(name_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, layer_name)
+        painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, layer_name)
 
         painter.restore()
 
@@ -143,8 +191,44 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         super(CustomTreeWidget, self).__init__(parent)
         self.layer_manager = None  # Will be set by EskiLayerManager
 
-    # No custom mousePressEvent needed in single column mode
-    # Qt's default handling works fine - itemClicked signal fires normally
+    def mousePressEvent(self, event):
+        """Intercept mouse press - only allow selection when clicking on layer name"""
+        item = self.itemAt(event.pos())
+        if not item:
+            super(CustomTreeWidget, self).mousePressEvent(event)
+            return
+
+        # Get click position in viewport coordinates
+        cursor_pos = event.pos()
+
+        # Get the visual rect for this item
+        index = self.indexAt(event.pos())
+        visual_rect = self.visualRect(index)
+
+        # Check if clicking on icons (visibility or add selection)
+        if hasattr(item, 'click_regions') and hasattr(item, 'current_item_y'):
+            y_offset = visual_rect.y() - item.current_item_y
+
+            # Check if clicking on visibility icon
+            if 'visibility' in item.click_regions:
+                vis_rect = item.click_regions['visibility'].translated(0, y_offset)
+                if vis_rect.contains(cursor_pos):
+                    # Don't allow selection - just let itemClicked handle the toggle
+                    event.accept()
+                    self.itemClicked.emit(item, 0)
+                    return
+
+            # Check if clicking on add selection icon
+            if 'add_selection' in item.click_regions:
+                add_rect = item.click_regions['add_selection'].translated(0, y_offset)
+                if add_rect.contains(cursor_pos):
+                    # Don't allow selection - just let itemClicked handle the add
+                    event.accept()
+                    self.itemClicked.emit(item, 0)
+                    return
+
+        # If clicking on name region or anywhere else, allow normal selection
+        super(CustomTreeWidget, self).mousePressEvent(event)
 
     def dropEvent(self, event):
         """Handle drop event to reparent layers in 3ds Max"""
@@ -503,7 +587,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Stylesheet for tree view (no custom branch drawing - handled by drawBranches override)
         self.layer_tree.setStyleSheet("""
             QTreeView {
-                show-decoration-selected: 1;
+                show-decoration-selected: 0;
             }
 
             QTreeView::item {
@@ -515,6 +599,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 border-image: none;
                 background: transparent;
                 image: none;
+            }
+
+            /* Remove selection background from branch area */
+            QTreeView::branch:selected {
+                background: transparent;
             }
         """)
 
