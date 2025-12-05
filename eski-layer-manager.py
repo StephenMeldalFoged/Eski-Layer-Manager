@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.12"
+VERSION = "0.6.17"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -281,7 +281,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Disable automatic tree decoration since we have manual arrows in column 0
         self.layer_tree.setRootIsDecorated(False)
-        self.layer_tree.setIndentation(0)  # No automatic indentation
+        self.layer_tree.setIndentation(20)  # Add indentation to show hierarchy
 
         self.layer_tree.itemClicked.connect(self.on_layer_clicked)
         self.layer_tree.itemDoubleClicked.connect(self.on_layer_double_clicked)
@@ -367,8 +367,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             layer_count = layer_manager.count
             print(f"[HIERARCHY] Found {layer_count} total layers")
 
-            # TEMPORARY: Just show ALL layers flat (no hierarchy yet)
-            # This is to debug why no layers are showing
+            # Collect all layers first
             all_layers = []
             for i in range(layer_count):
                 layer = layer_manager.getLayer(i)
@@ -376,154 +375,124 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     all_layers.append(layer)
                     print(f"[HIERARCHY] Layer {i}: {layer.name}")
 
-            # Sort alphabetically
-            all_layers.sort(key=lambda x: str(x.name).lower())
-
-            # Add all layers FLAT (no parent/child yet)
+            # Separate into root layers and child layers
+            root_layers = []
             for layer in all_layers:
-                layer_name = str(layer.name)
-                is_hidden = layer.ishidden
-                is_current = layer.current
+                try:
+                    parent = layer.getParent()
+                    # Check if parent is undefined/None (root layer)
+                    if parent is None or str(parent) == "undefined":
+                        root_layers.append(layer)
+                        print(f"[HIERARCHY] {layer.name} is a ROOT layer")
+                    else:
+                        print(f"[HIERARCHY] {layer.name} has parent: {parent.name}")
+                except:
+                    # If getParent fails, assume it's a root layer
+                    root_layers.append(layer)
+                    print(f"[HIERARCHY] {layer.name} is a ROOT layer (getParent failed)")
 
-                # Column 0: Arrow (▶ for all layers for now)
-                # Column 1: Visibility icon
-                # Column 2: Add selection icon
-                # Column 3: Layer name
+            # Sort root layers alphabetically
+            root_layers.sort(key=lambda x: str(x.name).lower())
 
-                # Create flat tree items with arrow in column 0
-                if self.use_native_icons:
-                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["▶", "", "", layer_name])
-                    item.setIcon(1, self.icon_hidden if is_hidden else self.icon_visible)
-                    item.setTextAlignment(1, QtCore.Qt.AlignCenter)
-                else:
-                    icon_text = "👁" if not is_hidden else "✖"
-                    item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["▶", icon_text, "", layer_name])
-                    item.setTextAlignment(1, QtCore.Qt.AlignCenter)
-                    font = item.font(1)
-                    font.setPointSize(12)
-                    font.setBold(True)
-                    item.setFont(1, font)
-
-                # Add arrow styling in column 0
-                item.setTextAlignment(0, QtCore.Qt.AlignCenter)
-                arrow_font = item.font(0)
-                arrow_font.setPointSize(10)
-                item.setFont(0, arrow_font)
-
-                # Add selection icon in column 2
-                if self.use_native_add_icon:
-                    item.setIcon(2, self.icon_add_selection)
-                    item.setTextAlignment(2, QtCore.Qt.AlignCenter)
-                else:
-                    item.setText(2, "+")
-                    item.setTextAlignment(2, QtCore.Qt.AlignCenter)
-                    font = item.font(2)
-                    font.setPointSize(14)
-                    font.setBold(True)
-                    item.setFont(2, font)
-
-                # Select the current/active layer
-                if is_current:
-                    item.setSelected(True)
-
-            print(f"[HIERARCHY] Added {len(all_layers)} layers to tree")
+            # Add root layers and their children recursively
+            for layer in root_layers:
+                self._add_layer_to_tree(layer, None)
 
         except Exception as e:
-            # If layer access fails, show error
+            print(f"[ERROR] populate_layers failed: {e}")
             import traceback
-            error_msg = f"Error loading layers: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
-            QtWidgets.QTreeWidgetItem(self.layer_tree, [error_msg])
+            traceback.print_exc()
+        finally:
+            # Reconnect signal
+            self.layer_tree.itemChanged.connect(self.on_layer_renamed)
 
-        # Reconnect the itemChanged signal
-        self.layer_tree.itemChanged.connect(self.on_layer_renamed)
-
-    def _add_layer_to_tree(self, layer, parent_item, layer_map):
-        """
-        Recursively add a layer and its children to the tree
-
-        Args:
-            layer: The layer object from 3ds Max
-            parent_item: The parent QTreeWidgetItem (None for root layers)
-            layer_map: Dictionary mapping layer names to layer objects
-        """
-        layer_name = str(layer.name)
-        is_hidden = layer.ishidden
-        is_current = layer.current
-
-        # Create tree item
-        if parent_item is None:
-            # Root level item
-            if self.use_native_icons:
-                item = QtWidgets.QTreeWidgetItem(self.layer_tree, ["", "", layer_name])
-                item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
-                item.setTextAlignment(0, QtCore.Qt.AlignCenter)
-            else:
-                icon_text = "👁" if not is_hidden else "✖"
-                item = QtWidgets.QTreeWidgetItem(self.layer_tree, [icon_text, "", layer_name])
-                item.setTextAlignment(0, QtCore.Qt.AlignCenter)
-                font = item.font(0)
-                font.setPointSize(12)
-                font.setBold(True)
-                item.setFont(0, font)
-        else:
-            # Child item
-            if self.use_native_icons:
-                item = QtWidgets.QTreeWidgetItem(parent_item, ["", "", layer_name])
-                item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
-                item.setTextAlignment(0, QtCore.Qt.AlignCenter)
-            else:
-                icon_text = "👁" if not is_hidden else "✖"
-                item = QtWidgets.QTreeWidgetItem(parent_item, [icon_text, "", layer_name])
-                item.setTextAlignment(0, QtCore.Qt.AlignCenter)
-                font = item.font(0)
-                font.setPointSize(12)
-                font.setBold(True)
-                item.setFont(0, font)
-
-        # Add selection icon in column 1
-        if self.use_native_add_icon:
-            item.setIcon(1, self.icon_add_selection)
-            item.setTextAlignment(1, QtCore.Qt.AlignCenter)
-        else:
-            item.setText(1, "+")
-            item.setTextAlignment(1, QtCore.Qt.AlignCenter)
-            font = item.font(1)
-            font.setPointSize(14)
-            font.setBold(True)
-            item.setFont(1, font)
-
-        # Select the current/active layer
-        if is_current:
-            item.setSelected(True)
-
-        # Check for children and add them recursively
+    def _add_layer_to_tree(self, layer, parent_item):
+        """Recursively add a layer and its children to the tree"""
         try:
-            num_children = layer.getNumChildren()
-            print(f"[HIERARCHY] {layer_name} has {num_children} children")
+            layer_name = str(layer.name)
+            is_hidden = layer.ishidden
+            is_current = layer.current
 
-            if num_children > 0:
-                item.setExpanded(True)  # Expand parents by default
+            # Check if this layer has children
+            try:
+                num_children = layer.getNumChildren()
+                has_children = num_children > 0
+                if has_children:
+                    print(f"[HIERARCHY] {layer_name} has {num_children} children")
+            except:
+                has_children = False
 
-                # Get children and sort them alphabetically
+            # Column 0: Arrow (▼ solid down if has children, ▶ solid right if not)
+            # Column 1: Visibility icon
+            # Column 2: Add selection icon
+            # Column 3: Layer name
+            arrow = "▼" if has_children else "▶"
+
+            # Create tree item (as child of parent_item if provided, else root)
+            if parent_item:
+                item = QtWidgets.QTreeWidgetItem(parent_item, [arrow, "", "", layer_name])
+            else:
+                item = QtWidgets.QTreeWidgetItem(self.layer_tree, [arrow, "", "", layer_name])
+
+            # Set visibility icon
+            if self.use_native_icons:
+                item.setIcon(1, self.icon_hidden if is_hidden else self.icon_visible)
+                item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+            else:
+                icon_text = "👁" if not is_hidden else "✖"
+                item.setText(1, icon_text)
+                item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+                font = item.font(1)
+                font.setPointSize(12)
+                font.setBold(True)
+                item.setFont(1, font)
+
+            # Add arrow styling in column 0 - make it bigger and bold
+            item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+            arrow_font = item.font(0)
+            arrow_font.setPointSize(14)  # Same size as + button
+            arrow_font.setBold(True)
+            item.setFont(0, arrow_font)
+
+            # Add selection icon in column 2
+            if self.use_native_add_icon:
+                item.setIcon(2, self.icon_add_selection)
+                item.setTextAlignment(2, QtCore.Qt.AlignCenter)
+            else:
+                item.setText(2, "+")
+                item.setTextAlignment(2, QtCore.Qt.AlignCenter)
+                font = item.font(2)
+                font.setPointSize(14)
+                font.setBold(True)
+                item.setFont(2, font)
+
+            # Select the current/active layer
+            if is_current:
+                item.setSelected(True)
+
+            # Recursively add children
+            if has_children:
+                # Expand parent layers by default (like native layer manager)
+                item.setExpanded(True)
+
+                # Get all children and sort them alphabetically
                 children = []
                 for i in range(num_children):
-                    try:
-                        child = layer.getChild(i + 1)  # MAXScript uses 1-based indexing
-                        if child:
-                            children.append(child)
-                            print(f"[HIERARCHY]   Child: {child.name}")
-                    except Exception as e:
-                        print(f"[ERROR] Getting child {i+1}: {e}")
+                    child = layer.getChild(i + 1)  # Note: getChild uses 1-based index (MAXScript convention)
+                    if child:
+                        children.append(child)
 
                 # Sort children alphabetically
                 children.sort(key=lambda x: str(x.name).lower())
 
-                # Recursively add children
+                # Add each child recursively
                 for child in children:
-                    self._add_layer_to_tree(child, item, layer_map)
+                    self._add_layer_to_tree(child, item)
+
         except Exception as e:
-            print(f"[ERROR] Processing children for '{layer_name}': {e}")
+            print(f"[ERROR] _add_layer_to_tree failed for layer: {e}")
+            import traceback
+            traceback.print_exc()
 
     def select_active_layer(self):
         """Find and select the currently active layer in the tree"""
