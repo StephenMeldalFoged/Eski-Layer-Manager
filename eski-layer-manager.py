@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.17"
+VERSION = "0.6.18"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -539,7 +539,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Column 3 = layer name (set as current layer)
             if column == 0:
                 # Arrow click - expand/collapse (TODO: implement hierarchy)
-                pass
+                # Clear selection to prevent row highlighting
+                self.layer_tree.clearSelection()
+                # Re-select the currently active layer (not the clicked one)
+                self.select_active_layer()
             elif column == 1:
                 # Toggle visibility only - do NOT select row or activate layer
                 self.toggle_layer_visibility(item, layer_name)
