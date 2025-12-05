@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.25"
+VERSION = "0.6.36"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -299,15 +299,32 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Create tree widget for layers (using custom widget that controls selection)
         self.layer_tree = CustomTreeWidget()
         self.layer_tree.setHeaderLabels(["1", "2", "3", "4"])  # DEBUG: Column numbers to see which are highlighted
-        self.layer_tree.setColumnWidth(0, 30)  # Arrow column width
-        self.layer_tree.setColumnWidth(1, 40)  # Visibility icon column width
-        self.layer_tree.setColumnWidth(2, 40)  # Add selection icon column width
+        # Column 0: Arrow - auto-resize to fit content (handles indentation)
+        self.layer_tree.header().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        # Column 1: Visibility - auto-resize to fit content
+        self.layer_tree.header().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        # Column 2: Add selection - auto-resize to fit content
+        self.layer_tree.header().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
         self.layer_tree.header().setStretchLastSection(True)  # Make name column stretch
         self.layer_tree.setAlternatingRowColors(True)
 
         # Disable automatic tree decoration since we have manual arrows in column 0
         self.layer_tree.setRootIsDecorated(False)
-        self.layer_tree.setIndentation(20)  # Add indentation to show hierarchy
+        self.layer_tree.setItemsExpandable(False)  # Disable Qt's automatic expand arrows
+        self.layer_tree.setIndentation(7)  # Add indentation to show hierarchy (1/3 of original 20px)
+
+        # Hide Qt's branch indicators completely using stylesheet
+        self.layer_tree.setStyleSheet("""
+            QTreeView::branch {
+                background: transparent;
+                border: none;
+            }
+            QTreeView::branch:has-children {
+                background: transparent;
+                border: none;
+                image: none;
+            }
+        """)
 
         self.layer_tree.itemClicked.connect(self.on_layer_clicked)
         self.layer_tree.itemDoubleClicked.connect(self.on_layer_double_clicked)
@@ -456,10 +473,20 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             arrow = "▼" if has_children else "▷"
 
             # Create tree item (as child of parent_item if provided, else root)
+            # Calculate depth for proper indentation in column 4
+            depth = 0
+            temp_parent = parent_item
+            while temp_parent:
+                depth += 1
+                temp_parent = temp_parent.parent()
+
+            # Add extra spacing based on depth (4 spaces per level)
+            display_name = ("    " * depth) + layer_name
+
             if parent_item:
-                item = QtWidgets.QTreeWidgetItem(parent_item, [arrow, "", "", layer_name])
+                item = QtWidgets.QTreeWidgetItem(parent_item, [arrow, "", "", display_name])
             else:
-                item = QtWidgets.QTreeWidgetItem(self.layer_tree, [arrow, "", "", layer_name])
+                item = QtWidgets.QTreeWidgetItem(self.layer_tree, [arrow, "", "", display_name])
 
             # Set visibility icon
             if self.use_native_icons:
@@ -470,15 +497,15 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 item.setText(1, icon_text)
                 item.setTextAlignment(1, QtCore.Qt.AlignCenter)
                 font = item.font(1)
-                font.setPointSize(12)
+                font.setPointSize(10)  # Reduced from 12 to 10
                 font.setBold(True)
                 item.setFont(1, font)
 
-            # Add arrow styling in column 0
-            item.setTextAlignment(0, QtCore.Qt.AlignCenter)
+            # Add arrow styling in column 0 - left aligned with indentation
+            item.setTextAlignment(0, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             arrow_font = item.font(0)
-            # Hollow right arrow (▷) is 12pt, down arrow (▼) is 8pt
-            arrow_font.setPointSize(12 if arrow == "▷" else 8)
+            # Hollow right arrow (▷) is 14pt, down arrow (▼) is 10pt
+            arrow_font.setPointSize(14 if arrow == "▷" else 10)
             arrow_font.setBold(False)  # Not bold
             item.setFont(0, arrow_font)
 
