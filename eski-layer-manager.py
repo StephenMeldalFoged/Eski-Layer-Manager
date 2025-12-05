@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.18"
+VERSION = "0.6.19"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -283,6 +283,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.setRootIsDecorated(False)
         self.layer_tree.setIndentation(20)  # Add indentation to show hierarchy
 
+        self.layer_tree.itemPressed.connect(self.on_layer_pressed)
         self.layer_tree.itemClicked.connect(self.on_layer_clicked)
         self.layer_tree.itemDoubleClicked.connect(self.on_layer_double_clicked)
         self.layer_tree.itemChanged.connect(self.on_layer_renamed)
@@ -520,6 +521,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         except Exception as e:
             pass  # Debug print removed
 
+    def on_layer_pressed(self, item, column):
+        """Handle mouse press - store which column was clicked"""
+        # Store the clicked column for use in on_layer_clicked
+        self._last_clicked_column = column
+
     def on_layer_clicked(self, item, column):
         """Handle layer click - toggle visibility, add selection, or set active layer"""
         if rt is None:
@@ -539,23 +545,18 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Column 3 = layer name (set as current layer)
             if column == 0:
                 # Arrow click - expand/collapse (TODO: implement hierarchy)
-                # Clear selection to prevent row highlighting
-                self.layer_tree.clearSelection()
-                # Re-select the currently active layer (not the clicked one)
-                self.select_active_layer()
+                # Restore active layer selection immediately
+                QtCore.QTimer.singleShot(0, self.select_active_layer)
             elif column == 1:
                 # Toggle visibility only - do NOT select row or activate layer
                 self.toggle_layer_visibility(item, layer_name)
-                # Clear selection immediately to prevent row highlighting
-                self.layer_tree.clearSelection()
-                # Re-select the currently active layer (not the clicked one)
-                self.select_active_layer()
+                # Restore active layer selection immediately
+                QtCore.QTimer.singleShot(0, self.select_active_layer)
             elif column == 2:
                 # Add selected objects to this layer
                 self.add_selection_to_layer(layer_name)
-                # Keep active layer highlighted
-                self.layer_tree.clearSelection()
-                self.select_active_layer()
+                # Restore active layer selection immediately
+                QtCore.QTimer.singleShot(0, self.select_active_layer)
             elif column == 3:
                 # Set as current layer
                 self.set_current_layer(layer_name)
