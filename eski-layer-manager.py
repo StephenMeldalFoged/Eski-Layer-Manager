@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.50"
+VERSION = "0.6.51"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -903,10 +903,17 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         try:
             print("[DEBUG] Attempting to create new layer...")
-            # Create a new layer
+            # Create a new layer using newLayer() instead of newLayerFromName()
             layer_manager = rt.layerManager
-            new_layer = layer_manager.newLayerFromName("Layer")
-            print(f"[DEBUG] Created new layer: {new_layer.name if new_layer else 'None'}")
+            new_layer = layer_manager.newLayer()
+            print(f"[DEBUG] newLayer() returned: {new_layer}")
+
+            if new_layer:
+                # Set the layer name
+                new_layer.setName("Layer")
+                print(f"[DEBUG] Set layer name to: {new_layer.name}")
+            else:
+                print("[DEBUG] newLayer() returned None or undefined")
 
             # Refresh the layer list to show the new layer
             print("[DEBUG] Refreshing layer list...")
