@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.52"
+VERSION = "0.6.53"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -1108,6 +1108,7 @@ fn EskiLayerManagerSceneCallback = (
             rt.callbacks.addScript(rt.Name("layerCreated"), "EskiLayerManagerCallback()")
             rt.callbacks.addScript(rt.Name("layerDeleted"), "EskiLayerManagerCallback()")
             rt.callbacks.addScript(rt.Name("nodeLayerChanged"), "EskiLayerManagerCallback()")
+            rt.callbacks.addScript(rt.Name("layerParentChanged"), "EskiLayerManagerCallback()")
 
             # Register callback for current layer changes (just update selection, no full refresh)
             # Try both possible callback names for layer current change
