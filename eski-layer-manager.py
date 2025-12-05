@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.20"
+VERSION = "0.6.21"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -53,7 +53,12 @@ class VisibilityIconDelegate(QtWidgets.QStyledItemDelegate):
         super(VisibilityIconDelegate, self).__init__(parent)
 
     def paint(self, painter, option, index):
-        """Custom paint method for rendering icons"""
+        """Custom paint method for rendering icons and controlling selection highlight"""
+        # Remove selection highlighting for columns 0, 1, 2 (only column 3 should show selection)
+        if index.column() in [0, 1, 2]:
+            # Remove the Selected state flag to prevent highlighting
+            option.state &= ~QtWidgets.QStyle.State_Selected
+
         if index.column() == 1:
             # Column 1 is the visibility icon column
             # Just use the option.rect as-is, don't try to expand it
@@ -272,7 +277,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Create tree widget for layers
         self.layer_tree = QtWidgets.QTreeWidget()
-        self.layer_tree.setHeaderLabels(["▶", "V", "+", "Layer Name"])  # Arrow, Visibility, Add Selection, Name
+        self.layer_tree.setHeaderLabels(["1", "2", "3", "4"])  # DEBUG: Column numbers to see which are highlighted
         self.layer_tree.setColumnWidth(0, 30)  # Arrow column width
         self.layer_tree.setColumnWidth(1, 40)  # Visibility icon column width
         self.layer_tree.setColumnWidth(2, 40)  # Add selection icon column width
@@ -300,10 +305,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Set uniform row heights for better icon display
         self.layer_tree.setUniformRowHeights(True)
 
-        # Install custom delegate for column 1 (visibility icons)
-        # This gives us direct control over rendering and fixes display issues
-        self.visibility_delegate = VisibilityIconDelegate(self.layer_tree)
-        self.layer_tree.setItemDelegateForColumn(1, self.visibility_delegate)
+        # Install custom delegate for all columns to control selection highlighting
+        # This gives us direct control over rendering and which columns show selection
+        self.custom_delegate = VisibilityIconDelegate(self.layer_tree)
+        for col in range(4):  # Apply to all 4 columns
+            self.layer_tree.setItemDelegateForColumn(col, self.custom_delegate)
         pass  # Debug print removed
 
         top_layout.addWidget(self.layer_tree)
