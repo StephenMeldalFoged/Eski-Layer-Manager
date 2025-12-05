@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.41"
+VERSION = "0.6.46"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -621,7 +621,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         # Check top-level items
                         for i in range(self.layer_tree.topLevelItemCount()):
                             item = self.layer_tree.topLevelItem(i)
-                            if item.text(3) == current_layer_name:  # Column 3 is layer name
+                            # Strip spaces from display name for comparison
+                            if item.text(3).lstrip() == current_layer_name:  # Column 3 is layer name
                                 item.setSelected(True)
                                 return True
                             # Check children recursively
@@ -632,7 +633,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 def find_and_select_children(parent_item):
                     for i in range(parent_item.childCount()):
                         child = parent_item.child(i)
-                        if child.text(3) == current_layer_name:  # Column 3 is layer name
+                        # Strip spaces from display name for comparison
+                        if child.text(3).lstrip() == current_layer_name:  # Column 3 is layer name
                             child.setSelected(True)
                             return True
                         # Check nested children
@@ -652,7 +654,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         try:
             # Get the layer name from the tree item (column 3)
-            layer_name = item.text(3)
+            # Strip leading spaces (we add spaces for visual indentation)
+            layer_name = item.text(3).lstrip()
 
             # Don't process test mode items
             if layer_name.startswith("[TEST MODE]"):
@@ -696,14 +699,19 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     parent_layer = layer.getParent()
                     if parent_layer and str(parent_layer) != "undefined":
                         parent_hidden = parent_layer.ishidden
-                except:
-                    pass
+                        print(f"[DEBUG] Layer '{layer_name}' parent '{parent_layer.name}' is hidden: {parent_hidden}")
+                    else:
+                        print(f"[DEBUG] Layer '{layer_name}' has no parent")
+                except Exception as e:
+                    print(f"[DEBUG] Error checking parent for '{layer_name}': {e}")
 
                 # If parent is hidden, don't allow toggling (child follows parent)
                 if parent_hidden:
+                    print(f"[DEBUG] Blocking toggle for '{layer_name}' - parent is hidden")
                     return
 
                 # Toggle visibility
+                print(f"[DEBUG] Toggling '{layer_name}' from {layer.ishidden} to {not layer.ishidden}")
                 layer.ishidden = not layer.ishidden
 
                 # Update icon in column 1 (native if available, Unicode fallback otherwise)
