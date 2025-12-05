@@ -4,11 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, with bi-directional synchronization with the native layer manager and full support for nested layer hierarchies.
+**Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, improving upon the built-in layer management tools.
 
-**Current Version:** 0.6.12
-
-**IMPORTANT VERSION POLICY:** Always use patch version increments (0.6.X), NOT minor version bumps (0.X.0). Never jump to 0.7.0, 0.8.0, etc.
+**Current Version:** 0.9.0
 
 ## Technology Stack
 
@@ -30,17 +28,15 @@ This is the recommended pattern for 3ds Max tool development when building compl
 
 ### Core Components
 
-**eski-layer-manager.py** (~1200 lines) - Main Python application
+**eski-layer-manager.py** - Main Python application
 - `EskiLayerManager` class: QDockWidget-based main window
-- Singleton pattern with list-based instance variable: `_layer_manager_instance = [None]`
+- `InlineIconDelegate` class: Custom delegate for rendering inline icons in single column layout
+- `CustomTreeWidget` class: Tree widget with custom mouse handling and drag-and-drop
+- Singleton pattern with class-level `instance` variable to prevent garbage collection
 - `show_layer_manager()`: Entry point function called from 3ds Max
-- `VisibilityIconDelegate`: Custom Qt delegate for rendering visibility icons correctly in 3ds Max
-- Bi-directional sync: Timer-based polling (500ms) syncs with native layer manager changes
-- Callback system: Registers 3ds Max callbacks for automatic refresh on layer events
-- **Nested layer hierarchy support**: Full parent-child relationships with drag-and-drop reparenting
-- Alphabetical sorting: Layers sorted by name (case-insensitive) at each hierarchy level
-- Three columns: Visibility icon | Add selection icon | Layer name
-- Drag-and-drop: Reorder and reparent layers with visual feedback
+- Docks to left/right only (not top/bottom), defaults to right
+- Uses `qtmax.GetQMaxMainWindow()` for proper 3ds Max integration
+- Standalone testing mode: Can run outside 3ds Max for UI development
 
 **install-macro-button.ms** - MAXScript installer with GUI
 - Creates macro button in "Eski Tools" category
@@ -49,160 +45,105 @@ This is the recommended pattern for 3ds Max tool development when building compl
 - Installs to `#userScripts` (user-writable), NOT `#scripts` (requires admin)
 - Generates `EskiLayerManager.mcr` in `#userMacros`
 - Uninstaller removes both .mcr and .py files
-- Version tracking: Update `installerVersion` variable to match Python `VERSION`
+- Note: Actions persist in memory until 3ds Max restart (MAXScript limitation)
 
 ### File Naming Convention
 
-The installer copies `eski-layer-manager.py` → `eski_layer_manager.py` (hyphen becomes underscore) to make it importable as a Python module.
+Important: The installer copies `eski-layer-manager.py` → `eski_layer_manager.py` (hyphen becomes underscore) to make it importable as a Python module.
 
-## Critical Implementation Details
+## Critical Architecture Details
 
-### Singleton Pattern (Lines 38-43, 1025-1080)
+### Single Column Layout with Inline Icons (v0.8.0+)
 
-**IMPORTANT:** The singleton uses a list container `_layer_manager_instance = [None]` instead of a simple variable. This prevents garbage collection issues in 3ds Max's embedded Python environment.
+The UI uses a **single column layout** where all elements are painted inline:
+- Layout: `[tree lines] [custom arrow ▶▼] [eye 👁] [+ icon] [layer name]`
+- Custom `InlineIconDelegate` paints everything in the `paint()` method
+- Icons stored in `QtCore.Qt.UserRole` data on tree items
+- Click detection uses stored click regions with viewport coordinate translation
 
+**Key implementation details:**
+- `_get_visual_row_number()`: Calculates visual row position for alternating backgrounds
+- Click regions stored as `item.click_regions` dict with 'visibility', 'add_selection', 'name' keys
+- Current Y position stored as `item.current_item_y` (integer, not QRect to avoid GC issues)
+- Viewport coordinates used for all click detection
+
+### Custom Tree Rendering (v0.8.0+)
+
+Tree lines and expand/collapse arrows are drawn programmatically:
+- `CustomTreeWidget.drawBranches()` override draws all tree visualization
+- Connecting lines: Vertical │ and horizontal ─ lines at center Y position
+- Arrows: ▶ (collapsed) and ▼ (expanded) drawn with `painter.drawText()`
+- Color: `#CCCCCC` (bright light gray) for visibility
+- No stylesheet-based tree lines - all custom painting
+
+### Custom Highlighting (v0.8.5+)
+
+Active layer highlighting is **text-only** with custom styling:
+- Only the layer name text is highlighted, not the full row
+- Deep teal color: `QtGui.QColor(0, 128, 128)`
+- White text on teal background for contrast
+- Tight fit around text using `QFontMetrics.horizontalAdvance()`
+- Selection only occurs when clicking layer name, not icons
+
+### Click Region Detection
+
+Position-based click detection using stored rectangles:
 ```python
-# Module initialization guard prevents re-initialization
-if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
-    _ESKI_LAYER_MANAGER_INITIALIZED = True
-    _layer_manager_instance = [None]
+# In delegate paint():
+vis_rect = QtCore.QRect(x, y, icon_size, h)
+item.click_regions['visibility'] = vis_rect
+item.current_item_y = option.rect.y()  # Store Y as int, not QRect
 
-# Access pattern
-_layer_manager_instance[0] = layer_manager  # Store instance
-instance = _layer_manager_instance[0]        # Retrieve instance
+# In click handler:
+y_offset = visual_rect.y() - item.current_item_y
+adjusted_rect = click_region.translated(0, y_offset)
+if adjusted_rect.contains(cursor_pos):
+    # Handle click
 ```
 
-**Why list container:**
-- Mutable objects resist garbage collection better than simple references
-- Prevents accidental rebinding
-- List object persists across function calls even if module namespace is modified
+**CRITICAL:** Always use `self.layer_tree.viewport().mapFromGlobal()` for cursor position, not `self.layer_tree.mapFromGlobal()`. Viewport coordinates match the delegate's paint coordinates.
 
-**C++ Object Lifetime Validation:**
-Always check if Qt widget is still valid before accessing:
-```python
-try:
-    _layer_manager_instance[0].isVisible()  # Test if C++ object exists
-    # Object is valid, use it
-except (RuntimeError, AttributeError):
-    # C++ object was deleted, create new instance
-    _layer_manager_instance[0] = None
-```
+### Icon Loading (v0.5.0+)
 
-### Icon Loading (Lines 146-260)
+Icons loaded using 3ds Max native StateSets icons with fallback:
+1. **Primary:** `qtmax.LoadMaxMultiResIcon("StateSets/Visible")` for visibility
+2. **Primary:** `qtmax.LoadMaxMultiResIcon("AnimLayerToolbar", index=11)` for add selection
+3. **Ultimate fallback:** Unicode text ("👁" visible, "✖" hidden, "🔒" frozen, "+" add)
 
-Icons are loaded using multiple fallback strategies due to 3ds Max's inconsistent icon resource paths:
+Icons painted directly in delegate using stored UserRole data.
 
-1. **Primary:** `qtmax.LoadMaxMultiResIcon("StateSets/Visible")` - Official method
-2. **Fallback:** Qt resource paths like `":/StateSets/Visible_16"`
-3. **Ultimate fallback:** Unicode emojis ("👁" for visible, "✖" for hidden, "+" for add selection)
+### Nested Layer Hierarchy (v0.6.1+)
 
-Priority order: StateSets > SceneExplorer > LayerExplorer
-
-Icons must have pixel data to be valid (check `availableSizes()` length > 0).
-
-### Custom Icon Delegate (Lines 46-97)
-
-`VisibilityIconDelegate` is required because 3ds Max's Qt integration has display issues with icons in tree widgets. The delegate:
-- Manually renders icons in column 0 using full column width
-- Handles both native QIcon and Unicode text fallbacks
-- Centers icons properly in the cell
-- Uses `AlignCenter` for proper positioning
-
-### Bi-Directional Sync (Lines 714-772)
-
-Two mechanisms keep the UI in sync with 3ds Max:
-
-1. **Timer-based polling (500ms):** `check_current_layer_sync()`
-   - Detects current layer changes
-   - Detects visibility state changes
-   - Updates UI without full refresh
-   - Silently fails to avoid error spam
-
-2. **Callback system:** `setup_callbacks()` (Lines 774-823)
-   - Registers MaxScript callbacks for layer events
-   - `layerCreated`, `layerDeleted`, `nodeLayerChanged` → full refresh
-   - `layerCurrent` → selection update only
-   - Scene events (`filePostOpen`, `systemPostReset`, `systemPostNew`) → close and reopen window
-
-**IMPORTANT:** Callbacks execute MaxScript code that calls back into Python:
-```maxscript
-fn EskiLayerManagerCallback = (
-    python.Execute "import eski_layer_manager; eski_layer_manager.refresh_from_callback()"
-)
-```
-
-### Layer Operations
-
-**Visibility Toggle (Column 0, Lines 511-543):**
-- Toggles `layer.ishidden` property
-- Updates icon immediately
-- Does NOT change current layer or selection
-
-**Add Selection to Layer (Column 1, Lines 545-583):**
-- Assigns selected objects to clicked layer using `layer.addNode(obj)`
-- Does NOT change current layer
-- Processes all objects in `rt.selection`
-
-**Set Current Layer (Column 2, Lines 585-606):**
-- Sets `layer.current = True`
-- Updates selection in tree to match
-
-**Rename Layer (Double-click Column 2, Lines 608-706):**
-- Stores original name in `self.editing_layer_name`
-- Makes item editable with `ItemIsEditable` flag
-- On commit, calls `layer.setname(new_name)`
-- Re-sorts layer list alphabetically after rename
-
-### Nested Layer Hierarchy (Lines 349-504)
-
-**Full support for nested layers like the native layer manager.**
-
-**Building the hierarchy:**
-1. Get all layers from `layerManager`
-2. Filter to find root layers: `layer.getParent() is None or == rt.undefined`
-3. Sort root layers alphabetically
-4. Recursively add each layer and its children using `_add_layer_to_tree()`
-
-**Key methods:**
-- `layer.getParent()` - Returns parent layer or None/undefined for root layers
-- `layer.getNumChildren()` - Count of direct children
+Full support for parent-child layer relationships:
+- `layer.getParent()` - Returns parent layer or None/undefined for root
+- `layer.setParent(parent)` - Set parent (use `rt.undefined` for root)
+- `layer.getNumChildren()` - Count direct children
 - `layer.getChild(index)` - Get child by 1-based index (MAXScript convention)
-- `layer.setParent(parent)` - Set parent layer (use `rt.undefined` for root)
 
-**Parent layers:**
-- Automatically expanded by default (`item.setExpanded(True)`)
-- Children sorted alphabetically within each parent
+**Drag-and-drop reparenting:**
+- Drop **ON** item → make child of target
+- Drop **ABOVE/BELOW** item → make sibling (same parent as target)
+- Drop on **empty space** → make root layer
+- Circular reference prevention with `_is_descendant()` check
 
-**Drag-and-Drop Reparenting (Lines 767-885):**
-- Drop **ON** an item → make dragged layer a child of target
-- Drop **ABOVE/BELOW** an item → make dragged layer a sibling (same parent as target)
-- Drop on **empty space** → make dragged layer a root layer
-- Circular reference prevention: Cannot make layer child of itself or its own descendant
-- `_is_descendant()` walks up parent chain to prevent invalid hierarchies
-- After drop, calls `populate_layers()` to refresh UI
+### Bi-Directional Sync (v0.5.0+)
 
-**Recursive search:**
-- `_find_layer_item()` recursively searches tree to find layer by name
-- Required because layers can be nested at any depth
-
-### Window Position Memory (Lines 943-1008)
-
-Position is saved to both:
-1. Scene file properties: `rt.fileProperties.addProperty()`
-2. Global INI file: `rt.setINISetting()`
-
-Data format: `"{is_floating};{x};{y};{width};{height}"`
-
-Priority: Scene file > Global INI > Default position
+Two mechanisms keep UI in sync with 3ds Max:
+1. **Timer-based polling (500ms):** Checks current layer and visibility state changes
+2. **Callback system:** Registers MAXScript callbacks for layer events
+   - Full refresh on: `layerCreated`, `layerDeleted`, `nodeLayerChanged`
+   - Selection update on: `layerCurrent`
+   - Close and reopen on: scene file events
 
 ## Development Workflow
 
-### Testing the UI Without 3ds Max
+### Testing the UI
 
+To test UI changes without 3ds Max:
 ```bash
 python eski-layer-manager.py
 ```
-This runs standalone mode with a basic Qt window (no 3ds Max integration, uses test data).
+This runs standalone mode with a basic Qt window (no 3ds Max integration).
 
 ### Installing in 3ds Max
 
@@ -216,37 +157,23 @@ This runs standalone mode with a basic Qt window (no 3ds Max integration, uses t
 
 After modifying code:
 1. Run installer again (upgrades existing installation)
-2. **Restart 3ds Max** (clears old actions from memory - MaxScript limitation)
-3. Macro button automatically uses `importlib.reload()` to load latest code
-
-**CRITICAL:** Do NOT use `importlib.reload()` in the macro button code - it breaks the singleton pattern. The current implementation imports normally and relies on module initialization guards.
+2. Restart 3ds Max (clears old actions from memory)
+3. Macro button automatically reloads the module on each click
 
 ### Version Management
 
-When adding features, update ALL THREE locations:
-1. `VERSION` constant in `eski-layer-manager.py` (line 36)
-2. `installerVersion` in `install-macro-button.ms` (line 6)
-3. Add entry to `Eski-LayerManager-By-Claude-Version-History.txt` with date, tag, and features
+**IMPORTANT VERSION POLICY:**
 
-### Debugging
+When updating versions:
+1. **Python script version** (`eski-layer-manager.py`): Update `VERSION` constant for EVERY change
+2. **Installer version** (`install-macro-button.ms`): Update `installerVersion` ONLY when installer script changes
 
-The code includes extensive debug output with prefixes:
-- `[IMPORT]` - Module imports
-- `[INIT]` - Module initialization
-- `[ICONS]` - Icon loading
-- `[UI]` - UI setup
-- `[POPULATE]` - Layer population
-- `[HIERARCHY]` - Layer hierarchy operations (v0.6.1+)
-- `[DRAG]` - Drag-and-drop operations (v0.6.1+)
-- `[SELECT]` - Layer selection
-- `[LAYER]` - Layer operations
-- `[RENAME]` - Rename operations
-- `[SYNC]` - Synchronization
-- `[CALLBACKS]` - Callback registration/execution
-- `[POSITION]` - Window position save/restore
-- `[ERROR]` - Errors with stack traces
+Both versions should match for major releases, but installer version may lag behind if only Python code changes.
 
-Use `get_instance_status()` helper function to inspect singleton state.
+Update these locations when bumping versions:
+- Line 5: Docstring `Version: X.X.X`
+- Line 36: `VERSION = "X.X.X"`
+- install-macro-button.ms line 6: `local installerVersion = "X.X.X"`
 
 ## Important 3ds Max Integration Notes
 
@@ -256,30 +183,37 @@ The macro button adds `#userScripts` to Python's `sys.path` at runtime because 3
 ### Docking API
 - Use `qtmax.GetQMaxMainWindow()` to get the 3ds Max main window as QMainWindow
 - Parent QDockWidget to this window
-- Use `addDockWidget(QtCore.Qt.RightDockWidgetArea, widget)` to dock programmatically
-- `setAllowedAreas(LeftDockWidgetArea | RightDockWidgetArea)` restricts docking positions
+- Use `addDockWidget()` to dock programmatically
+- Setting `QDockWidget.setAllowedAreas()` restricts docking positions
 
-### Garbage Collection in 3ds Max
-Qt widgets can be garbage collected in 3ds Max's Python environment. Always keep a reference in a mutable container (list, dict) at module level, not just a simple variable.
+### Garbage Collection
+Qt widgets can be garbage collected in 3ds Max's Python environment. Always keep a reference:
+```python
+EskiLayerManager.instance = layer_manager
+```
 
 ### Action Manager Limitations
 MAXScript provides no API to unregister actions at runtime. Actions loaded during a session persist in the Customize UI until 3ds Max restarts. This is a 3ds Max limitation, not a bug.
 
-### MaxScript Callback Limitations
-- `postMerge` callback is NOT supported in 3ds Max 2026
-- `layerCurrent` callback may not exist in all Max versions
-- Callbacks persist until explicitly removed or Max restarts
+### QRect Garbage Collection Issue
+
+**CRITICAL:** Never store QRect objects directly on tree items - they get garbage collected by Qt's C++ layer.
+
+```python
+# WRONG - QRect gets deleted:
+item.current_item_rect = option.rect
+
+# CORRECT - Store primitive values:
+item.current_item_y = option.rect.y()
+```
+
+Always extract primitive values (int, float, string) from Qt objects when storing on Python objects.
 
 ## Common Issues
 
 **"ModuleNotFoundError: No module named 'eski_layer_manager'"**
 - Python file not in user scripts directory
 - Run installer to auto-copy, or manually copy to: `C:\Users\<User>\AppData\Local\Autodesk\3dsMax\<Version>\ENU\scripts\`
-
-**Multiple instances appear (singleton broken)**
-- Check that module initialization guard is working (`_ESKI_LAYER_MANAGER_INITIALIZED`)
-- Verify instance is stored in list container: `_layer_manager_instance = [None]`
-- Do NOT use `importlib.reload()` in macro button
 
 **Old macro button errors after update**
 - Restart 3ds Max to clear old actions from memory
@@ -288,36 +222,19 @@ MAXScript provides no API to unregister actions at runtime. Actions loaded durin
 - Keep installer and Python file in same folder
 - Check MAXScript Listener for search paths
 
+**Click detection not working**
+- Verify using `viewport().mapFromGlobal()` not `mapFromGlobal()`
+- Check `click_regions` are stored with proper viewport coordinates
+- Ensure `current_item_y` is stored as int, not QRect
+
 **Icons not displaying**
-- Check debug output for icon loading attempts
 - Icons fall back to Unicode emojis if native icons fail
 - Custom delegate is required for correct rendering in 3ds Max
 
-**Callbacks not working**
-- Check MAXScript Listener for callback errors
-- Verify callback functions are defined globally
-- Some callbacks may not be available in all Max versions
+**Double-click firing twice**
+- Ensure only ONE `itemClicked.emit()` per click event
+- Don't manually emit `itemClicked` in `mousePressEvent` if calling `super()`
 
-**Window doesn't remember position**
-- Position is saved on close - check `closeEvent()` is called
-- Try saving scene file (scene properties persist with file)
-- Check INI file permissions
+## Planned Features
 
-## Planned Features (wishlist.txt)
-
-Top priorities based on user research:
-1. Bulk layer visibility & freeze control with isolation mode
-2. Quick object selection by layer (click to select all objects)
-3. Drag-and-drop object assignment between layers
-4. Layer hierarchy with parent/child relationships (nested layers)
-5. Smart layer search/filter with property display
-
-See `wishlist.txt` for detailed feature specifications and API methods.
-
-## Reference Documentation
-
-See `External-Links.txt` for:
-- 3ds Max Python API documentation
-- pymxs and MaxPlus documentation
-- Qt icon resource guides
-- Community forums and tutorials
+See `wishlist.txt` for detailed feature specifications.
