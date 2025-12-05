@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.48"
+VERSION = "0.6.49"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -430,16 +430,20 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         create_layer_btn.setToolTip("Create New Layer")
         create_layer_btn.setFixedSize(32, 32)  # Square button
 
-        # Try to load Layer icon - try multiple paths
+        # Try to load Layer icon - try multiple paths following StateSets pattern
         icon_loaded = False
         if QTMAX_AVAILABLE:
             import qtmax
-            # Try multiple icon paths for create new layer
+            # Try multiple icon paths for create new layer (following StateSets/Refresh pattern)
             icon_paths = [
-                "Layer/Layer_NewLayer",
+                "Layers/CreateNewLayer",
+                "Layers/NewLayer",
                 "Layer/CreateNewLayer",
                 "Layer/NewLayer",
+                "Layer/Layer_NewLayer",
                 "Layer/AddNewLayer",
+                "SceneExplorer/CreateNewLayer",
+                "SceneExplorer/NewLayer",
                 "Ribbon/SceneExplorer/Layer_NewLayer"
             ]
             for icon_path in icon_paths:
@@ -450,11 +454,13 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                             create_layer_btn.setIcon(create_icon)
                             create_layer_btn.setIconSize(QtCore.QSize(24, 24))
                             icon_loaded = True
+                            print(f"[DEBUG] Loaded create layer icon from: {icon_path}")
                             break
                 except:
                     continue
 
         if not icon_loaded:
+            print("[DEBUG] Failed to load create layer icon, using text fallback")
             create_layer_btn.setText("+")
 
         button_layout.addWidget(create_layer_btn)
