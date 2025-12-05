@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.51"
+VERSION = "0.6.52"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -454,13 +454,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                             create_layer_btn.setIcon(create_icon)
                             create_layer_btn.setIconSize(QtCore.QSize(24, 24))
                             icon_loaded = True
-                            print(f"[DEBUG] Loaded create layer icon from: {icon_path}")
                             break
                 except:
                     continue
 
         if not icon_loaded:
-            print("[DEBUG] Failed to load create layer icon, using text fallback")
             create_layer_btn.setText("+")
 
         button_layout.addWidget(create_layer_btn)
@@ -895,30 +893,20 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
     def create_new_layer(self):
         """Create a new layer in 3ds Max"""
-        print("[DEBUG] create_new_layer() called")
-
         if rt is None:
-            print("[DEBUG] rt is None, cannot create layer")
             return
 
         try:
-            print("[DEBUG] Attempting to create new layer...")
             # Create a new layer using newLayer() instead of newLayerFromName()
             layer_manager = rt.layerManager
             new_layer = layer_manager.newLayer()
-            print(f"[DEBUG] newLayer() returned: {new_layer}")
 
             if new_layer:
                 # Set the layer name
                 new_layer.setName("Layer")
-                print(f"[DEBUG] Set layer name to: {new_layer.name}")
-            else:
-                print("[DEBUG] newLayer() returned None or undefined")
 
             # Refresh the layer list to show the new layer
-            print("[DEBUG] Refreshing layer list...")
             self.populate_layers()
-            print("[DEBUG] Layer list refreshed")
 
         except Exception as e:
             import traceback
