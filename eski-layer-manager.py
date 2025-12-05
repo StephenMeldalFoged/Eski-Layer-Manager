@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.19"
+VERSION = "0.6.20"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -283,10 +283,14 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.setRootIsDecorated(False)
         self.layer_tree.setIndentation(20)  # Add indentation to show hierarchy
 
+        # Track if we're allowing selection changes
+        self._allow_selection_change = True
+
         self.layer_tree.itemPressed.connect(self.on_layer_pressed)
         self.layer_tree.itemClicked.connect(self.on_layer_clicked)
         self.layer_tree.itemDoubleClicked.connect(self.on_layer_double_clicked)
         self.layer_tree.itemChanged.connect(self.on_layer_renamed)
+        self.layer_tree.itemSelectionChanged.connect(self.on_selection_changed)
         self.layer_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.layer_tree.customContextMenuRequested.connect(self.on_layer_context_menu)
 
@@ -501,6 +505,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         try:
+            # Allow this programmatic selection change
+            self._allow_selection_change = True
+
             # Clear all existing selections first (only one layer can be active)
             self.layer_tree.clearSelection()
 
@@ -511,20 +518,46 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             if current_layer:
                 current_layer_name = str(current_layer.name)
 
-                # Find and select the matching item in the tree
-                for i in range(self.layer_tree.topLevelItemCount()):
-                    item = self.layer_tree.topLevelItem(i)
-                    if item.text(2) == current_layer_name:  # Column 2 is layer name
-                        item.setSelected(True)
-                        pass  # Debug print removed
-                        return
+                # Recursively find and select the matching item in the tree
+                def find_and_select(parent_item=None):
+                    if parent_item is None:
+                        # Check top-level items
+                        for i in range(self.layer_tree.topLevelItemCount()):
+                            item = self.layer_tree.topLevelItem(i)
+                            if item.text(3) == current_layer_name:  # Column 3 is layer name
+                                item.setSelected(True)
+                                return True
+                            # Check children recursively
+                            if find_and_select_children(item):
+                                return True
+                    return False
+
+                def find_and_select_children(parent_item):
+                    for i in range(parent_item.childCount()):
+                        child = parent_item.child(i)
+                        if child.text(3) == current_layer_name:  # Column 3 is layer name
+                            child.setSelected(True)
+                            return True
+                        # Check nested children
+                        if find_and_select_children(child):
+                            return True
+                    return False
+
+                find_and_select()
+
         except Exception as e:
             pass  # Debug print removed
 
+    def on_selection_changed(self):
+        """Handle selection changes - restore active layer if change not allowed"""
+        if not self._allow_selection_change:
+            # Block this selection change and restore active layer
+            QtCore.QTimer.singleShot(0, self.select_active_layer)
+
     def on_layer_pressed(self, item, column):
-        """Handle mouse press - store which column was clicked"""
-        # Store the clicked column for use in on_layer_clicked
-        self._last_clicked_column = column
+        """Handle mouse press - decide if selection change is allowed"""
+        # Only allow selection changes when clicking column 3 (layer name)
+        self._allow_selection_change = (column == 3)
 
     def on_layer_clicked(self, item, column):
         """Handle layer click - toggle visibility, add selection, or set active layer"""
@@ -545,20 +578,16 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Column 3 = layer name (set as current layer)
             if column == 0:
                 # Arrow click - expand/collapse (TODO: implement hierarchy)
-                # Restore active layer selection immediately
-                QtCore.QTimer.singleShot(0, self.select_active_layer)
+                pass
             elif column == 1:
                 # Toggle visibility only - do NOT select row or activate layer
                 self.toggle_layer_visibility(item, layer_name)
-                # Restore active layer selection immediately
-                QtCore.QTimer.singleShot(0, self.select_active_layer)
             elif column == 2:
                 # Add selected objects to this layer
                 self.add_selection_to_layer(layer_name)
-                # Restore active layer selection immediately
-                QtCore.QTimer.singleShot(0, self.select_active_layer)
             elif column == 3:
                 # Set as current layer
+                self._allow_selection_change = True
                 self.set_current_layer(layer_name)
 
         except Exception as e:
