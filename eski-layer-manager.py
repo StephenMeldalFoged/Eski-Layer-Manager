@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.22"
+VERSION = "0.6.25"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -449,11 +449,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             except:
                 has_children = False
 
-            # Column 0: Arrow (▼ solid down if has children, ▶ solid right if not)
+            # Column 0: Arrow (▼ solid down if has children, ▷ hollow right if not)
             # Column 1: Visibility icon
             # Column 2: Add selection icon
             # Column 3: Layer name
-            arrow = "▼" if has_children else "▶"
+            arrow = "▼" if has_children else "▷"
 
             # Create tree item (as child of parent_item if provided, else root)
             if parent_item:
@@ -474,11 +474,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 font.setBold(True)
                 item.setFont(1, font)
 
-            # Add arrow styling in column 0 - make it bigger and bold
+            # Add arrow styling in column 0
             item.setTextAlignment(0, QtCore.Qt.AlignCenter)
             arrow_font = item.font(0)
-            arrow_font.setPointSize(14)  # Same size as + button
-            arrow_font.setBold(True)
+            # Hollow right arrow (▷) is 12pt, down arrow (▼) is 8pt
+            arrow_font.setPointSize(12 if arrow == "▷" else 8)
+            arrow_font.setBold(False)  # Not bold
             item.setFont(0, arrow_font)
 
             # Add selection icon in column 2
