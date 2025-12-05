@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.6.53"
+VERSION = "0.6.57"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -462,6 +462,41 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             create_layer_btn.setText("+")
 
         button_layout.addWidget(create_layer_btn)
+
+        # Add delete layer button with icon
+        delete_layer_btn = QtWidgets.QPushButton()
+        delete_layer_btn.clicked.connect(self.delete_selected_layer)
+        delete_layer_btn.setToolTip("Delete Selected Layer")
+        delete_layer_btn.setFixedSize(32, 32)  # Square button
+
+        # Try to load DeleteAnimLayer icon (correct path: animationLayer/DeleteAnimLayer)
+        delete_icon_loaded = False
+        if QTMAX_AVAILABLE:
+            import qtmax
+            # Try the correct icon path first, then fallbacks
+            delete_icon_paths = [
+                "animationLayer/DeleteAnimLayer",  # Correct path
+                "AnimationLayer/DeleteAnimLayer",
+                "Animation/DeleteAnimLayer",
+                "AnimLayers/DeleteAnimLayer",
+                "AnimationLayers/DeleteAnimLayer"
+            ]
+            for icon_path in delete_icon_paths:
+                try:
+                    delete_icon = qtmax.LoadMaxMultiResIcon(icon_path)
+                    if delete_icon and not delete_icon.isNull():
+                        if len(delete_icon.availableSizes()) > 0:
+                            delete_layer_btn.setIcon(delete_icon)
+                            delete_layer_btn.setIconSize(QtCore.QSize(24, 24))
+                            delete_icon_loaded = True
+                            break
+                except:
+                    continue
+
+        if not delete_icon_loaded:
+            delete_layer_btn.setText("-")
+
+        button_layout.addWidget(delete_layer_btn)
 
         top_layout.insertLayout(1, button_layout)
 
@@ -911,6 +946,45 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         except Exception as e:
             import traceback
             error_msg = f"Error creating new layer: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] {error_msg}")
+
+    def delete_selected_layer(self):
+        """Delete the currently selected layer in the tree"""
+        if rt is None:
+            return
+
+        # Get selected item
+        selected_items = self.layer_tree.selectedItems()
+        if not selected_items:
+            print("[ERROR] No layer selected to delete")
+            return
+
+        selected_item = selected_items[0]
+        layer_name = selected_item.text(3).lstrip()  # Column 3 is layer name, strip indentation
+
+        try:
+            # Find the layer (search recursively for nested layers)
+            layer = self._find_layer_by_name(layer_name)
+
+            if layer:
+                # Check if layer has any objects
+                if layer.nodes and len(layer.nodes) > 0:
+                    print(f"[ERROR] Cannot delete layer '{layer_name}' - it contains {len(layer.nodes)} object(s)")
+                    return
+
+                # Delete the layer
+                layer_manager = rt.layerManager
+                layer_manager.deleteLayerByName(layer_name)
+
+                # Refresh the layer list
+                self.populate_layers()
+
+            else:
+                print(f"[ERROR] Layer '{layer_name}' not found")
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Error deleting layer: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
 
     def on_layer_double_clicked(self, item, column):
