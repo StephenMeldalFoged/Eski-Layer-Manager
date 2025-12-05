@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.7.0"
+VERSION = "0.7.2"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -92,6 +92,10 @@ class VisibilityIconDelegate(QtWidgets.QStyledItemDelegate):
 class CustomTreeWidget(QtWidgets.QTreeWidget):
     """Custom QTreeWidget that only allows selection on column 3"""
 
+    def __init__(self, parent=None):
+        super(CustomTreeWidget, self).__init__(parent)
+        self.layer_manager = None  # Will be set by EskiLayerManager
+
     def mousePressEvent(self, event):
         """Intercept mouse press to prevent selection on columns 0, 1, 2"""
         item = self.itemAt(event.pos())
@@ -108,6 +112,49 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
 
         # For column 3 or empty space, use default behavior
         super(CustomTreeWidget, self).mousePressEvent(event)
+
+    def dropEvent(self, event):
+        """Handle drop event to reparent layers in 3ds Max"""
+        # Get the dragged item
+        dragged_items = self.selectedItems()
+        if not dragged_items:
+            event.ignore()
+            return
+
+        dragged_item = dragged_items[0]
+        dragged_layer_name = dragged_item.text(3).lstrip()
+
+        # Get drop position
+        drop_indicator = self.dropIndicatorPosition()
+        target_item = self.itemAt(event.pos())
+
+        # Determine the new parent based on drop position
+        new_parent_name = None
+        if target_item:
+            target_layer_name = target_item.text(3).lstrip()
+
+            if drop_indicator == QtWidgets.QAbstractItemView.OnItem:
+                # Dropped ON item - make it a child
+                new_parent_name = target_layer_name
+            elif drop_indicator in [QtWidgets.QAbstractItemView.AboveItem, QtWidgets.QAbstractItemView.BelowItem]:
+                # Dropped ABOVE or BELOW item - make it a sibling (same parent as target)
+                if target_item.parent():
+                    new_parent_name = target_item.parent().text(3).lstrip()
+                else:
+                    new_parent_name = None  # Root level
+        else:
+            # Dropped on empty space - make it root
+            new_parent_name = None
+
+        # Call the layer manager to update 3ds Max
+        if self.layer_manager:
+            self.layer_manager.reparent_layer(dragged_layer_name, new_parent_name)
+            # The reparent_layer method calls populate_layers() which rebuilds the tree
+            # This ensures the UI matches 3ds Max's hierarchy exactly
+
+        # Ignore the event to prevent Qt from doing its own tree manipulation
+        # We handle everything through populate_layers() refresh
+        event.ignore()
 
 
 class EskiLayerManager(QtWidgets.QDockWidget):
@@ -318,6 +365,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Create tree widget for layers (using custom widget that controls selection)
         self.layer_tree = CustomTreeWidget()
+        self.layer_tree.layer_manager = self  # Set reference for drag-and-drop
         self.layer_tree.setHeaderLabels(["1", "2", "3", "4"])  # DEBUG: Column numbers to see which are highlighted
         # Column 0: Arrow - auto-resize to fit content (handles indentation)
         self.layer_tree.header().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
@@ -357,6 +405,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Set uniform row heights for better icon display
         self.layer_tree.setUniformRowHeights(True)
+
+        # Enable drag-and-drop for layer reparenting
+        self.layer_tree.setDragEnabled(True)
+        self.layer_tree.setAcceptDrops(True)
+        self.layer_tree.setDropIndicatorShown(True)
+        self.layer_tree.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
 
         # Install custom delegate for all columns to control selection highlighting
         # This gives us direct control over rendering and which columns show selection
@@ -1009,6 +1063,59 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         arrow_font.setPointSize(14 if new_arrow == "▷" else 10)
         arrow_font.setBold(False)
         item.setFont(0, arrow_font)
+
+    def reparent_layer(self, layer_name, new_parent_name):
+        """Reparent a layer in 3ds Max"""
+        if rt is None:
+            return
+
+        try:
+            # Find the layer to move
+            layer = self._find_layer_by_name(layer_name)
+            if not layer:
+                print(f"[ERROR] Layer '{layer_name}' not found")
+                return
+
+            # Prevent circular reference (can't make layer its own parent)
+            if new_parent_name == layer_name:
+                print(f"[ERROR] Cannot make layer '{layer_name}' its own parent")
+                return
+
+            # Find the new parent layer (or None for root)
+            new_parent = None
+            if new_parent_name:
+                new_parent = self._find_layer_by_name(new_parent_name)
+                if not new_parent:
+                    print(f"[ERROR] Parent layer '{new_parent_name}' not found")
+                    return
+
+                # Prevent circular reference (can't make layer child of its own descendant)
+                # Check if new_parent is a descendant of layer
+                temp = new_parent
+                while temp:
+                    parent = temp.getParent()
+                    if parent and str(parent) != "undefined":
+                        if str(parent.name) == layer_name:
+                            print(f"[ERROR] Cannot make layer '{layer_name}' a child of its descendant '{new_parent_name}'")
+                            return
+                        temp = parent
+                    else:
+                        break
+
+            # Set the new parent
+            if new_parent:
+                layer.setParent(new_parent)
+            else:
+                # Make it a root layer by setting parent to undefined
+                layer.setParent(rt.undefined)
+
+            # Refresh the layer list to show the new hierarchy
+            self.populate_layers()
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Error reparenting layer: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] {error_msg}")
 
     def on_layer_double_clicked(self, item, column):
         """Handle layer double-click - start inline rename"""
