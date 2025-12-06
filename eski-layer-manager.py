@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.9.8
+Version: 0.10.6
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.9.8"
+VERSION = "0.10.6"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -231,7 +231,37 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         super(CustomTreeWidget, self).mousePressEvent(event)
 
     def dropEvent(self, event):
-        """Handle drop event to reparent layers in 3ds Max"""
+        """Handle drop event to reparent layers or reassign objects to layers in 3ds Max"""
+        # Check if this is a drag from the objects tree
+        source_widget = event.source()
+
+        # If dragging from objects tree (not layer tree)
+        if source_widget != self and hasattr(self.layer_manager, 'objects_tree') and source_widget == self.layer_manager.objects_tree:
+            # Get selected objects from objects tree
+            dragged_objects = self.layer_manager.objects_tree.selectedItems()
+            if not dragged_objects:
+                event.ignore()
+                return
+
+            # Get target layer
+            target_item = self.itemAt(event.pos())
+            if not target_item:
+                event.ignore()
+                return
+
+            target_layer_name = target_item.text(0)  # Single column - text(0) is layer name
+
+            # Get object names
+            object_names = [item.text(0) for item in dragged_objects]
+
+            # Call the layer manager to reassign objects
+            if self.layer_manager:
+                self.layer_manager.reassign_objects_to_layer(object_names, target_layer_name)
+
+            event.accept()
+            return
+
+        # Original layer reparenting logic
         # Get the dragged item
         dragged_items = self.selectedItems()
         if not dragged_items:
@@ -647,11 +677,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Set uniform row heights for better icon display
         self.layer_tree.setUniformRowHeights(True)
 
-        # Enable drag-and-drop for layer reparenting
+        # Enable drag-and-drop for layer reparenting and object reassignment
         self.layer_tree.setDragEnabled(True)
         self.layer_tree.setAcceptDrops(True)
         self.layer_tree.setDropIndicatorShown(True)
-        self.layer_tree.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
+        self.layer_tree.setDragDropMode(QtWidgets.QAbstractItemView.DragDrop)  # Accept both internal and external drops
 
         # Install custom delegate for inline icon rendering
         self.custom_delegate = InlineIconDelegate(self, self.layer_tree)
@@ -659,7 +689,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         top_layout.addWidget(self.layer_tree)
 
-        # Bottom section - will contain object list
+        # Bottom section - object list
         bottom_widget = QtWidgets.QWidget()
         bottom_layout = QtWidgets.QVBoxLayout(bottom_widget)
         bottom_layout.setContentsMargins(5, 5, 5, 5)
@@ -669,11 +699,46 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         objects_label.setStyleSheet("font-weight: bold; padding: 2px;")
         bottom_layout.addWidget(objects_label)
 
-        # Placeholder for objects list
-        bottom_placeholder = QtWidgets.QLabel("Objects in selected layer will appear here")
-        bottom_placeholder.setAlignment(QtCore.Qt.AlignCenter)
-        bottom_placeholder.setStyleSheet("padding: 20px; color: #999;")
-        bottom_layout.addWidget(bottom_placeholder)
+        # Create objects tree using same CustomTreeWidget as layers
+        self.objects_tree = CustomTreeWidget()
+        self.objects_tree.setHeaderHidden(True)
+        self.objects_tree.setIndentation(20)
+        self.objects_tree.setAlternatingRowColors(True)
+        self.objects_tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)  # Enable multi-select
+        self.objects_tree.setDragEnabled(True)  # Enable dragging from objects tree
+        self.objects_tree.setItemDelegate(InlineIconDelegate(self))
+        self.objects_tree.setStyleSheet("""
+            QTreeWidget {
+                background-color: #2b2b2b;
+                alternate-background-color: #2d2d2d;
+                color: #cccccc;
+                border: none;
+                outline: none;
+            }
+            QTreeWidget::item {
+                padding: 0px;
+                padding-left: 2px;
+                padding-right: 2px;
+                height: 18px;
+                border: none;
+            }
+            QTreeWidget::item:selected {
+                background-color: transparent;
+            }
+            QTreeWidget::item:hover {
+                background-color: #3a3a3a;
+            }
+            /* Clear all branch styling - we draw everything in drawBranches */
+            QTreeWidget::branch {
+                background: transparent;
+                border: none;
+            }
+        """)
+
+        # Connect object selection to scene selection
+        self.objects_tree.itemSelectionChanged.connect(self.on_object_selection_changed)
+
+        bottom_layout.addWidget(self.objects_tree)
 
         # Add widgets to splitter
         self.splitter.addWidget(top_widget)
@@ -973,6 +1038,61 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             import traceback
             traceback.print_exc()
 
+    def populate_objects(self, layer_name):
+        """Populate the objects tree with objects from the specified layer"""
+        self.objects_tree.clear()
+
+        if rt is None:
+            # Testing mode - add dummy objects
+            test_objects = [
+                "[TEST] Box001",
+                "[TEST] Sphere001",
+                "[TEST] Cylinder001"
+            ]
+            for obj_name in test_objects:
+                item = QtWidgets.QTreeWidgetItem(self.objects_tree, [obj_name])
+                # No icons for objects - just the name
+            return
+
+        try:
+            # Find the layer
+            layer = self._find_layer_by_name(layer_name)
+            if not layer:
+                print(f"[OBJECTS] Layer '{layer_name}' not found")
+                return
+
+            # Get all objects in the scene
+            all_nodes = rt.objects
+
+            # Filter objects that belong to this layer
+            layer_objects = []
+            for node in all_nodes:
+                try:
+                    if hasattr(node, 'layer') and node.layer and str(node.layer.name) == layer_name:
+                        layer_objects.append(node)
+                except:
+                    pass
+
+            print(f"[OBJECTS] Found {len(layer_objects)} objects in layer '{layer_name}'")
+
+            # Sort objects by name
+            layer_objects.sort(key=lambda x: str(x.name).lower())
+
+            # Add each object to the tree
+            for obj in layer_objects:
+                try:
+                    obj_name = str(obj.name)
+                    item = QtWidgets.QTreeWidgetItem(self.objects_tree, [obj_name])
+                    # No icons for objects - just the name
+
+                except Exception as e:
+                    print(f"[ERROR] Failed to add object to tree: {e}")
+
+        except Exception as e:
+            print(f"[ERROR] populate_objects failed: {e}")
+            import traceback
+            traceback.print_exc()
+
     def select_active_layer(self):
         """Find and select the currently active layer in the tree"""
         if rt is None:
@@ -1018,8 +1138,42 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
                 find_and_select()
 
+                # Populate objects tree with current layer's objects
+                self.populate_objects(current_layer_name)
+
         except Exception as e:
             pass  # Debug print removed
+
+    def on_object_selection_changed(self):
+        """Handle object selection change - select objects in 3ds Max scene"""
+        if rt is None:
+            return
+
+        try:
+            # Get selected items from objects tree
+            selected_items = self.objects_tree.selectedItems()
+            if not selected_items:
+                return
+
+            # Get object names
+            object_names = [item.text(0) for item in selected_items]
+
+            # Build a selection array in 3ds Max
+            selection_array = rt.Array()
+            for obj_name in object_names:
+                obj = rt.getNodeByName(obj_name)
+                if obj:
+                    rt.append(selection_array, obj)
+
+            # Set the selection in 3ds Max
+            if len(selection_array) > 0:
+                rt.select(selection_array)
+                print(f"[OBJECTS] Selected {len(selection_array)} object(s) in scene")
+
+        except Exception as e:
+            print(f"[ERROR] on_object_selection_changed failed: {e}")
+            import traceback
+            traceback.print_exc()
 
     def on_layer_clicked(self, item, column):
         """Handle layer click - toggle visibility, add selection, or set active layer (single column)"""
@@ -1078,6 +1232,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         print(f"[CLICK DEBUG] CLICKED NAME!")
                         # Set as current layer (selection already handled by CustomTreeWidget)
                         self.set_current_layer(layer_name)
+                        # Populate objects tree with objects from this layer
+                        self.populate_objects(layer_name)
                         return
             else:
                 print(f"[CLICK DEBUG] No click_regions found!")
@@ -1221,6 +1377,43 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         except Exception as e:
             import traceback
             error_msg = f"Error adding selection to layer: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] {error_msg}")
+
+    def reassign_objects_to_layer(self, object_names, target_layer_name):
+        """Reassign objects (by name) to a different layer"""
+        if rt is None:
+            return
+
+        try:
+            # Find the target layer
+            target_layer = self._find_layer_by_name(target_layer_name)
+            if not target_layer:
+                print(f"[ERROR] Target layer '{target_layer_name}' not found")
+                return
+
+            # Find and reassign each object
+            success_count = 0
+            for obj_name in object_names:
+                try:
+                    # Get object by name from 3ds Max
+                    obj = rt.getNodeByName(obj_name)
+                    if obj:
+                        # Assign to new layer
+                        target_layer.addNode(obj)
+                        success_count += 1
+                    else:
+                        print(f"[ERROR] Object '{obj_name}' not found")
+                except Exception as e:
+                    print(f"[ERROR] Failed to reassign object '{obj_name}': {e}")
+
+            print(f"[OBJECTS] Reassigned {success_count}/{len(object_names)} objects to layer '{target_layer_name}'")
+
+            # Refresh the objects tree to show updated list
+            self.populate_objects(target_layer_name)
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Error reassigning objects to layer: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
 
     def set_current_layer(self, layer_name):
