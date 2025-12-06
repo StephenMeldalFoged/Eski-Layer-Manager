@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.9.0
+Version: 0.9.8
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.9.0"
+VERSION = "0.9.8"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -55,7 +55,7 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
         self.icon_size = 16
         self.icon_spacing = 4
         self.plus_icon_size = 18  # Bigger size for plus icon
-        self.plus_icon_spacing = 8  # Extra spacing before plus icon
+        self.plus_icon_spacing = 4  # Extra spacing before plus icon
 
     def _get_visual_row_number(self, index):
         """Calculate the visual row number by counting all visible rows from top"""
@@ -289,6 +289,7 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
 
         # Draw vertical lines for parent hierarchy
         pen = QtGui.QPen(QtGui.QColor("#CCCCCC"), 1)  # Brighter gray
+        pen.setStyle(QtCore.Qt.DotLine)  # Make lines dotted
         painter.setPen(pen)
 
         # Draw vertical lines for each parent level
@@ -314,7 +315,11 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         # Draw horizontal line to this item (centered vertically)
         if depth > 0:
             x_start = (depth - 1) * indent + indent // 2
-            x_end = depth * indent + 2
+            # Extend line further if no children (no arrow takes up space)
+            if self.model().hasChildren(index):
+                x_end = depth * indent + 2
+            else:
+                x_end = depth * indent + 16  # Extend to reach near the eye icon
             painter.drawLine(x_start, center_y, x_end, center_y)
 
             # Draw vertical line from top to center for this item
@@ -336,28 +341,51 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
                     painter.drawLine(x, rect.y(), x, center_y)
                 else:
                     painter.drawLine(x, rect.y(), x, center_y)
+        else:
+            # Root level (depth == 0) - draw horizontal line from left edge
+            x_start = indent // 2
+            x_end = indent + 2
+            painter.drawLine(x_start, center_y, x_end, center_y)
+
+            # Draw vertical line for root level connection
+            x = indent // 2
+            row = index.row()
+            sibling_count = self.model().rowCount(QtCore.QModelIndex())
+
+            if row == 0 and sibling_count > 1:
+                # First root item - draw from center down
+                painter.drawLine(x, center_y, x, rect.y() + rect.height())
+            elif row == sibling_count - 1 and row > 0:
+                # Last root item - draw from top to center
+                painter.drawLine(x, rect.y(), x, center_y)
+            elif sibling_count > 1:
+                # Middle root item - draw full height
+                painter.drawLine(x, rect.y(), x, rect.y() + rect.height())
 
         # Draw expand/collapse arrow if this item has children
         if self.model().hasChildren(index):
-            arrow_x = depth * indent + 4
             arrow_y = center_y
 
             # Set font for arrow
             font = self.font()
-            font.setPointSize(8)
+            font.setPointSize(20)
             painter.setFont(font)
 
             if self.isExpanded(index):
-                # Draw down arrow (▼)
-                arrow_text = "▼"
+                # Draw down arrow (▾) - moved left 1 pixel
+                arrow_text = "▾"
+                arrow_x = depth * indent + 4
             else:
-                # Draw right arrow (▶)
-                arrow_text = "▶"
+                # Draw right arrow (▸) - moved up 3 pixels
+                arrow_text = "▸"
+                arrow_x = depth * indent + 4
 
             # Draw the arrow text centered
             fm = QtGui.QFontMetrics(font)
             text_width = fm.horizontalAdvance(arrow_text)
-            painter.drawText(arrow_x, arrow_y + fm.ascent() // 2, arrow_text)
+            # Move right arrow up 3 pixels
+            y_offset = -3 if not self.isExpanded(index) else 0
+            painter.drawText(arrow_x, arrow_y + fm.ascent() // 2 + y_offset, arrow_text)
 
         painter.restore()
 
@@ -1104,6 +1132,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
                 # Trigger repaint
                 self.layer_tree.update(self.layer_tree.indexFromItem(item))
+
+                # Force viewport redraw to show/hide objects immediately
+                rt.redrawViews()
 
                 status = "hidden" if layer.ishidden else "visible"
                 print(f"[VISIBILITY] Layer '{layer_name}' is now {status}")
