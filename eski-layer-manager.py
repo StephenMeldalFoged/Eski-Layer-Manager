@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.10.6
+Version: 0.11.7
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.10.6"
+VERSION = "0.11.7"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -464,8 +464,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Set default size (taller window)
         self.resize(350, 800)  # Width: 350px, Height: 800px (was default ~400px)
 
-        # Restore window position
-        self.restore_position()
+        # Note: Position restoration is now handled in show_layer_manager()
+        # This ensures saved position is applied AFTER the widget is added to the main window
 
         # Setup timer to poll for current layer changes (fallback if callback doesn't work)
         self.setup_sync_timer()
@@ -1820,7 +1820,7 @@ fn EskiLayerManagerSceneCallback = (
             pass  # Debug print removed
 
     def save_position(self):
-        """Save window position to 3ds Max scene and global settings"""
+        """Save window position, size, and docking state to current .max file"""
         if rt is None:
             return
 
@@ -1830,61 +1830,102 @@ fn EskiLayerManagerSceneCallback = (
             pos = self.pos()
             size = self.size()
 
-            # Save to scene file data
-            position_data = f"{is_floating};{pos.x()};{pos.y()};{size.width()};{size.height()}"
-            rt.fileProperties.addProperty(rt.Name("EskiLayerManagerPosition"), position_data)
+            # Determine dock area if docked
+            dock_area = "none"
+            if not is_floating:
+                # Get parent main window to check dock area
+                parent = self.parent()
+                if parent and hasattr(parent, 'dockWidgetArea'):
+                    area = parent.dockWidgetArea(self)
+                    if area == QtCore.Qt.LeftDockWidgetArea:
+                        dock_area = "left"
+                    elif area == QtCore.Qt.RightDockWidgetArea:
+                        dock_area = "right"
 
-            # Also save to global preferences (INI-like storage)
-            rt.setINISetting(rt.maxFilePath + rt.maxFileName + ".ini", "EskiLayerManager", "LastPosition", position_data)
+            # Format: floating;dock_area;x;y;width;height
+            position_data = f"{is_floating};{dock_area};{pos.x()};{pos.y()};{size.width()};{size.height()}"
 
-            pass  # Debug print removed
+            # Save to current .max file using fileProperties
+            # First, try to delete existing property if it exists
+            try:
+                existing = rt.fileProperties.findProperty(rt.Name("custom"), "EskiLayerManagerPosition")
+                if existing:
+                    rt.fileProperties.deleteProperty(existing)
+            except:
+                pass  # Property doesn't exist yet
+
+            # Add new property - addProperty signature: (#custom, name, value)
+            # #custom indicates a custom property (not #summary or #contents)
+            rt.fileProperties.addProperty(rt.Name("custom"), "EskiLayerManagerPosition", position_data)
+
+            print(f"[POSITION] Saved to .max file: floating={is_floating}, dock={dock_area}, pos=({pos.x()},{pos.y()}), size=({size.width()},{size.height()})")
         except Exception as e:
-            pass  # Debug print removed
+            print(f"[ERROR] save_position failed: {e}")
+            import traceback
+            traceback.print_exc()
 
-    def restore_position(self):
-        """Restore window position from scene or global settings"""
+    def get_saved_position(self):
+        """
+        Get saved position data from current .max file
+        Returns dict with keys: floating, dock_area, x, y, width, height
+        Returns None if no saved position exists
+        """
         if rt is None:
-            return
+            return None
 
         try:
-            position_data = None
+            # Load from current .max file using fileProperties
+            # findProperty returns the index (1-based), not the property object
+            prop_index = rt.fileProperties.findProperty(rt.Name("custom"), "EskiLayerManagerPosition")
 
-            # First try to load from scene file
-            try:
-                position_data = rt.fileProperties.findProperty(rt.Name("EskiLayerManagerPosition"))
-                if position_data:
-                    position_data = str(position_data.value)
-                    pass  # Debug print removed
-            except:
-                pass
+            # If findProperty returns 0, property doesn't exist
+            if not prop_index or prop_index == 0:
+                print("[POSITION] No saved position found in .max file")
+                return None
 
-            # If not in scene, try global preferences
-            if not position_data:
-                try:
-                    position_data = rt.getINISetting(rt.maxFilePath + rt.maxFileName + ".ini", "EskiLayerManager", "LastPosition")
-                    if position_data and position_data != "":
-                        pass  # Debug print removed
-                except:
-                    pass
+            # Get the actual property value using the index
+            position_data = str(rt.fileProperties.getPropertyValue(rt.Name("custom"), prop_index))
 
-            # Parse and apply position data
-            if position_data:
-                parts = position_data.split(";")
-                if len(parts) == 5:
-                    is_floating = parts[0] == "True"
-                    x = int(parts[1])
-                    y = int(parts[2])
-                    width = int(parts[3])
-                    height = int(parts[4])
+            if not position_data or position_data == "":
+                return None
 
-                    # Apply position
-                    self.move(x, y)
-                    self.resize(width, height)
-                    self.setFloating(is_floating)
+            # Parse position data
+            parts = position_data.split(";")
 
-                    pass  # Debug print removed
+            # Support both old format (5 parts) and new format (6 parts)
+            if len(parts) == 6:
+                # New format: floating;dock_area;x;y;width;height
+                result = {
+                    'floating': parts[0] == "True",
+                    'dock_area': parts[1],
+                    'x': int(parts[2]),
+                    'y': int(parts[3]),
+                    'width': int(parts[4]),
+                    'height': int(parts[5])
+                }
+                print(f"[POSITION] Loaded from .max file: {result}")
+                return result
+            elif len(parts) == 5:
+                # Old format: floating;x;y;width;height (no dock_area)
+                result = {
+                    'floating': parts[0] == "True",
+                    'dock_area': "none",
+                    'x': int(parts[1]),
+                    'y': int(parts[2]),
+                    'width': int(parts[3]),
+                    'height': int(parts[4])
+                }
+                print(f"[POSITION] Loaded from .max file (old format): {result}")
+                return result
+            else:
+                print(f"[POSITION] Invalid format in .max file: {position_data}")
+                return None
+
         except Exception as e:
-            pass  # Debug print removed
+            print(f"[ERROR] get_saved_position failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def closeEvent(self, event):
         """Handle close event"""
@@ -2003,12 +2044,14 @@ def get_instance_status():
 
 def show_layer_manager():
     """
-    Show the Eski Layer Manager window (Singleton pattern)
+    Toggle the Eski Layer Manager window (Singleton pattern)
+    - If window is open and visible: close it
+    - If window is closed or hidden: show it
     Call this function from 3ds Max to launch the tool
     Only one instance can exist at a time.
 
     Returns:
-        EskiLayerManager: The singleton instance of the layer manager
+        EskiLayerManager: The singleton instance of the layer manager (or None if closed)
     """
     global _layer_manager_instance
 
@@ -2021,19 +2064,29 @@ def show_layer_manager():
         try:
             # Try to access the widget to see if it's still alive
             # This will raise RuntimeError if the C++ object was deleted
-            _layer_manager_instance[0].isVisible()
+            is_visible = _layer_manager_instance[0].isVisible()
 
-            # If we get here, the widget is still valid - bring to front
-            _layer_manager_instance[0].show()
-            _layer_manager_instance[0].raise_()
-            _layer_manager_instance[0].activateWindow()
-            return _layer_manager_instance[0]
+            # If we get here, the widget is still valid
+            if is_visible:
+                # Window is visible - CLOSE it (toggle off)
+                print("[TOGGLE] Window is visible, closing it")
+                _layer_manager_instance[0].close()
+                return None
+            else:
+                # Window exists but hidden - SHOW it (toggle on)
+                print("[TOGGLE] Window exists but hidden, showing it")
+                _layer_manager_instance[0].show()
+                _layer_manager_instance[0].raise_()
+                _layer_manager_instance[0].activateWindow()
+                return _layer_manager_instance[0]
 
         except (RuntimeError, AttributeError):
             # Window was deleted, clear the reference and create new one
+            print("[TOGGLE] Window was deleted, creating new one")
             _layer_manager_instance[0] = None
 
     # No valid instance exists, create a new one
+    print("[TOGGLE] No existing window, creating new one")
 
     # Get the 3ds Max main window
     if QTMAX_AVAILABLE:
@@ -2048,10 +2101,55 @@ def show_layer_manager():
     # Store reference in the list to prevent garbage collection
     _layer_manager_instance[0] = layer_manager
 
-    # Show the window
-    if max_main_window:
-        # Dock it to the right side by default
-        max_main_window.addDockWidget(QtCore.Qt.RightDockWidgetArea, layer_manager)
+    # Try to restore saved position
+    saved_pos = layer_manager.get_saved_position()
+
+    if saved_pos:
+        # Restore from saved position
+        print(f"[POSITION] Restoring saved position: {saved_pos}")
+
+        if max_main_window:
+            # Add to main window first (required for docking)
+            if saved_pos['floating']:
+                # Floating window - add as floating
+                max_main_window.addDockWidget(QtCore.Qt.RightDockWidgetArea, layer_manager)
+                layer_manager.setFloating(True)
+                layer_manager.move(saved_pos['x'], saved_pos['y'])
+            else:
+                # Docked window - add to correct dock area
+                dock_area = QtCore.Qt.RightDockWidgetArea  # default
+                if saved_pos['dock_area'] == 'left':
+                    dock_area = QtCore.Qt.LeftDockWidgetArea
+                elif saved_pos['dock_area'] == 'right':
+                    dock_area = QtCore.Qt.RightDockWidgetArea
+
+                max_main_window.addDockWidget(dock_area, layer_manager)
+
+            # Restore size
+            layer_manager.resize(saved_pos['width'], saved_pos['height'])
+        else:
+            # No main window (testing mode) - just apply position
+            layer_manager.move(saved_pos['x'], saved_pos['y'])
+            layer_manager.resize(saved_pos['width'], saved_pos['height'])
+    else:
+        # No saved position - use default: floating and centered
+        print("[POSITION] No saved position, using default: floating and centered")
+
+        if max_main_window:
+            # Add as floating widget
+            max_main_window.addDockWidget(QtCore.Qt.RightDockWidgetArea, layer_manager)
+            layer_manager.setFloating(True)
+
+            # Center on screen
+            screen = max_main_window.screen() if hasattr(max_main_window, 'screen') else None
+            if screen:
+                screen_geometry = screen.availableGeometry()
+                x = (screen_geometry.width() - layer_manager.width()) // 2
+                y = (screen_geometry.height() - layer_manager.height()) // 2
+                layer_manager.move(x, y)
+            else:
+                # Fallback if screen geometry not available
+                layer_manager.move(100, 100)
 
     layer_manager.show()
 

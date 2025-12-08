@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, improving upon the built-in layer management tools.
 
-**Current Version:** 0.9.0
+**Current Version:** 0.11.7
 
 ## Technology Stack
 
@@ -29,14 +29,16 @@ This is the recommended pattern for 3ds Max tool development when building compl
 ### Core Components
 
 **eski-layer-manager.py** - Main Python application
-- `EskiLayerManager` class: QDockWidget-based main window
+- `EskiLayerManager` class: QDockWidget-based main window with vertical splitter (layers top, objects bottom)
 - `InlineIconDelegate` class: Custom delegate for rendering inline icons in single column layout
-- `CustomTreeWidget` class: Tree widget with custom mouse handling and drag-and-drop
+- `CustomTreeWidget` class: Tree widget with custom mouse handling and drag-and-drop (used for both layers and objects)
 - Singleton pattern with class-level `instance` variable to prevent garbage collection
 - `show_layer_manager()`: Entry point function called from 3ds Max
 - Docks to left/right only (not top/bottom), defaults to right
 - Uses `qtmax.GetQMaxMainWindow()` for proper 3ds Max integration
 - Standalone testing mode: Can run outside 3ds Max for UI development
+- **Split-view UI:** Top section shows layers tree, bottom section shows objects in selected layer
+- **Object management:** Select objects in tree to select them in scene, drag objects to reassign to different layers
 
 **install-macro-button.ms** - MAXScript installer with GUI
 - Creates macro button in "Eski Tools" category
@@ -135,6 +137,20 @@ Two mechanisms keep UI in sync with 3ds Max:
    - Selection update on: `layerCurrent`
    - Close and reopen on: scene file events
 
+### Objects Tree (v0.10.0+)
+
+Bottom panel shows objects in the selected layer:
+- **Object listing:** Displays all objects assigned to the currently selected layer
+- **Scene selection sync:** Click objects in tree to select them in 3ds Max viewport
+- **Multi-selection:** Ctrl+Click for multiple object selection
+- **Drag-and-drop reassignment:** Drag objects from objects tree to any layer in layers tree to reassign
+- **Cross-tree drag-drop:** `CustomTreeWidget.dropEvent()` detects source widget and handles appropriately
+- **Automatic refresh:** Object list updates when selecting different layers
+- Key methods:
+  - `populate_objects(layer_name)` - Fills objects tree for specified layer
+  - `on_object_selection_changed()` - Syncs tree selection to scene selection
+  - `reassign_objects_to_layer()` - Handles drag-drop reassignment from objects to layers
+
 ## Development Workflow
 
 ### Testing the UI
@@ -171,9 +187,9 @@ When updating versions:
 Both versions should match for major releases, but installer version may lag behind if only Python code changes.
 
 Update these locations when bumping versions:
-- Line 5: Docstring `Version: X.X.X`
-- Line 36: `VERSION = "X.X.X"`
-- install-macro-button.ms line 6: `local installerVersion = "X.X.X"`
+- eski-layer-manager.py line 5: Docstring `Version: X.X.X`
+- eski-layer-manager.py line 36: `VERSION = "X.X.X"`
+- install-macro-button.ms line 6: `local installerVersion = "X.X.X"` (only when installer changes)
 
 ## Important 3ds Max Integration Notes
 

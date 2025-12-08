@@ -16,7 +16,14 @@
       "WebFetch(domain:mayoi.me)",
       "WebFetch(domain:stackoverflow.com)",
       "Bash(python:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(git stash:*)",
+      "Bash(git mv:*)",
+      "Bash(if [ -f .gitignore ])",
+      "Bash(then cat .gitignore)",
+      "Bash(else echo \"No .gitignore file\")",
+      "Bash(fi)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []
