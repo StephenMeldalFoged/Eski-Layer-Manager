@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.11.7
+Version: 0.13.1
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.11.7"
+VERSION = "0.13.1"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -1819,8 +1819,73 @@ fn EskiLayerManagerSceneCallback = (
         except Exception as e:
             pass  # Debug print removed
 
+    def get_dock_widgets_in_area(self, dock_area):
+        """
+        Get all dock widgets in the specified dock area, sorted by vertical position
+        Returns list of tuples: (widget, y_position, object_name)
+        """
+        parent = self.parent()
+        if not parent or not isinstance(parent, QtWidgets.QMainWindow):
+            return []
+
+        widgets = []
+        for widget in parent.findChildren(QtWidgets.QDockWidget):
+            if widget == self:
+                continue  # Skip ourselves
+
+            # Check if widget is in the same dock area
+            area = parent.dockWidgetArea(widget)
+            if area == dock_area and not widget.isFloating():
+                # Get vertical position
+                y_pos = widget.geometry().y()
+                obj_name = widget.objectName()
+                widgets.append((widget, y_pos, obj_name))
+
+        # Sort by vertical position
+        widgets.sort(key=lambda x: x[1])
+        return widgets
+
+    def find_relative_position(self):
+        """
+        Find our position relative to other dock widgets
+        Returns dict with: dock_area, above_widget_name, below_widget_name
+        """
+        parent = self.parent()
+        if not parent or not isinstance(parent, QtWidgets.QMainWindow):
+            return None
+
+        if self.isFloating():
+            return None  # Not applicable for floating widgets
+
+        # Get our dock area
+        dock_area = parent.dockWidgetArea(self)
+        our_y = self.geometry().y()
+
+        # Get all widgets in same area, sorted by Y position
+        widgets = self.get_dock_widgets_in_area(dock_area)
+
+        if not widgets:
+            return {'dock_area': dock_area, 'above': None, 'below': None}
+
+        # Find widgets immediately above and below us
+        above_widget = None
+        below_widget = None
+
+        for widget, y_pos, obj_name in widgets:
+            if y_pos < our_y:
+                above_widget = obj_name  # Keep updating - we want the closest one
+            elif y_pos > our_y and below_widget is None:
+                below_widget = obj_name  # First one below us
+                break
+
+        return {
+            'dock_area': dock_area,
+            'above': above_widget,
+            'below': below_widget
+        }
+
     def save_position(self):
-        """Save window position, size, and docking state to current .max file"""
+        """Save window position, size, docking state, and relative dock position"""
         if rt is None:
             return
 
@@ -1832,6 +1897,9 @@ fn EskiLayerManagerSceneCallback = (
 
             # Determine dock area if docked
             dock_area = "none"
+            relative_above = "none"
+            relative_below = "none"
+
             if not is_floating:
                 # Get parent main window to check dock area
                 parent = self.parent()
@@ -1842,11 +1910,21 @@ fn EskiLayerManagerSceneCallback = (
                     elif area == QtCore.Qt.RightDockWidgetArea:
                         dock_area = "right"
 
-            # Format: floating;dock_area;x;y;width;height
-            position_data = f"{is_floating};{dock_area};{pos.x()};{pos.y()};{size.width()};{size.height()}"
+                # Find our relative position to other dock widgets
+                rel_pos = self.find_relative_position()
+                if rel_pos:
+                    if rel_pos['above']:
+                        relative_above = rel_pos['above']
+                        print(f"[POSITION] We are below: {relative_above}")
+                    if rel_pos['below']:
+                        relative_below = rel_pos['below']
+                        print(f"[POSITION] We are above: {relative_below}")
+
+            # Format: floating;dock_area;x;y;width;height;relative_above;relative_below
+            position_data = f"{is_floating};{dock_area};{pos.x()};{pos.y()};{size.width()};{size.height()};{relative_above};{relative_below}"
 
             # Save to current .max file using fileProperties
-            # First, try to delete existing property if it exists
+            # First, try to delete existing properties if they exist
             try:
                 existing = rt.fileProperties.findProperty(rt.Name("custom"), "EskiLayerManagerPosition")
                 if existing:
@@ -1855,7 +1933,6 @@ fn EskiLayerManagerSceneCallback = (
                 pass  # Property doesn't exist yet
 
             # Add new property - addProperty signature: (#custom, name, value)
-            # #custom indicates a custom property (not #summary or #contents)
             rt.fileProperties.addProperty(rt.Name("custom"), "EskiLayerManagerPosition", position_data)
 
             print(f"[POSITION] Saved to .max file: floating={is_floating}, dock={dock_area}, pos=({pos.x()},{pos.y()}), size=({size.width()},{size.height()})")
@@ -1867,7 +1944,7 @@ fn EskiLayerManagerSceneCallback = (
     def get_saved_position(self):
         """
         Get saved position data from current .max file
-        Returns dict with keys: floating, dock_area, x, y, width, height
+        Returns dict with keys: floating, dock_area, x, y, width, height, dock_state
         Returns None if no saved position exists
         """
         if rt is None:
@@ -1892,30 +1969,48 @@ fn EskiLayerManagerSceneCallback = (
             # Parse position data
             parts = position_data.split(";")
 
-            # Support both old format (5 parts) and new format (6 parts)
-            if len(parts) == 6:
-                # New format: floating;dock_area;x;y;width;height
+            # Support multiple formats for backwards compatibility
+            if len(parts) == 8:
+                # New format: floating;dock_area;x;y;width;height;relative_above;relative_below
                 result = {
                     'floating': parts[0] == "True",
                     'dock_area': parts[1],
                     'x': int(parts[2]),
                     'y': int(parts[3]),
                     'width': int(parts[4]),
-                    'height': int(parts[5])
+                    'height': int(parts[5]),
+                    'relative_above': parts[6] if parts[6] != "none" else None,
+                    'relative_below': parts[7] if parts[7] != "none" else None
                 }
-                print(f"[POSITION] Loaded from .max file: {result}")
+                print(f"[POSITION] Loaded: floating={result['floating']}, dock={result['dock_area']}, above={result['relative_above']}, below={result['relative_below']}")
+                return result
+            elif len(parts) == 6:
+                # Old format: floating;dock_area;x;y;width;height
+                result = {
+                    'floating': parts[0] == "True",
+                    'dock_area': parts[1],
+                    'x': int(parts[2]),
+                    'y': int(parts[3]),
+                    'width': int(parts[4]),
+                    'height': int(parts[5]),
+                    'relative_above': None,
+                    'relative_below': None
+                }
+                print(f"[POSITION] Loaded (old format): floating={result['floating']}, dock={result['dock_area']}")
                 return result
             elif len(parts) == 5:
-                # Old format: floating;x;y;width;height (no dock_area)
+                # Very old format: floating;x;y;width;height (no dock_area)
                 result = {
                     'floating': parts[0] == "True",
                     'dock_area': "none",
                     'x': int(parts[1]),
                     'y': int(parts[2]),
                     'width': int(parts[3]),
-                    'height': int(parts[4])
+                    'height': int(parts[4]),
+                    'relative_above': None,
+                    'relative_below': None
                 }
-                print(f"[POSITION] Loaded from .max file (old format): {result}")
+                print(f"[POSITION] Loaded (very old format): floating={result['floating']}")
                 return result
             else:
                 print(f"[POSITION] Invalid format in .max file: {position_data}")
@@ -1929,13 +2024,17 @@ fn EskiLayerManagerSceneCallback = (
 
     def closeEvent(self, event):
         """Handle close event"""
+        print("[CLOSE] closeEvent triggered")
+
         # Stop sync timer
         if hasattr(self, 'sync_timer'):
             self.sync_timer.stop()
-            pass  # Debug print removed
+            print("[CLOSE] Sync timer stopped")
 
         # Save position before closing
+        print("[CLOSE] Saving position...")
         self.save_position()
+        print("[CLOSE] Position saved")
 
         # Remove callbacks
         self.remove_callbacks()
@@ -1943,6 +2042,8 @@ fn EskiLayerManagerSceneCallback = (
         # Clear the global instance reference
         global _layer_manager_instance
         _layer_manager_instance[0] = None
+        print("[CLOSE] Instance reference cleared")
+
         super().closeEvent(event)
 
 
@@ -2106,26 +2207,84 @@ def show_layer_manager():
 
     if saved_pos:
         # Restore from saved position
-        print(f"[POSITION] Restoring saved position: {saved_pos}")
+        print(f"[POSITION] Restoring saved position")
 
         if max_main_window:
-            # Add to main window first (required for docking)
+            # First, add widget to main window (required before restoreState)
             if saved_pos['floating']:
                 # Floating window - add as floating
+                print(f"[POSITION] Restoring as FLOATING at ({saved_pos['x']}, {saved_pos['y']})")
                 max_main_window.addDockWidget(QtCore.Qt.RightDockWidgetArea, layer_manager)
                 layer_manager.setFloating(True)
                 layer_manager.move(saved_pos['x'], saved_pos['y'])
             else:
-                # Docked window - add to correct dock area
+                # Docked window - restore to correct dock area and relative position
                 dock_area = QtCore.Qt.RightDockWidgetArea  # default
                 if saved_pos['dock_area'] == 'left':
                     dock_area = QtCore.Qt.LeftDockWidgetArea
+                    print(f"[POSITION] Restoring as DOCKED LEFT")
                 elif saved_pos['dock_area'] == 'right':
                     dock_area = QtCore.Qt.RightDockWidgetArea
+                    print(f"[POSITION] Restoring as DOCKED RIGHT")
 
-                max_main_window.addDockWidget(dock_area, layer_manager)
+                # Try to find a reference widget to split from
+                reference_widget = None
+                orientation = QtCore.Qt.Vertical  # Split vertically (stack vertically)
+
+                # First, try to find the widget we were below (prefer "above" reference)
+                if saved_pos.get('relative_above'):
+                    print(f"[POSITION] Looking for reference widget: {saved_pos['relative_above']}")
+                    for widget in max_main_window.findChildren(QtWidgets.QDockWidget):
+                        if widget.objectName() == saved_pos['relative_above']:
+                            area = max_main_window.dockWidgetArea(widget)
+                            if area == dock_area and not widget.isFloating():
+                                reference_widget = widget
+                                print(f"[POSITION] Found reference widget (will split below it)")
+                                break
+
+                # If not found, try the widget we were above
+                if not reference_widget and saved_pos.get('relative_below'):
+                    print(f"[POSITION] Looking for reference widget: {saved_pos['relative_below']}")
+                    for widget in max_main_window.findChildren(QtWidgets.QDockWidget):
+                        if widget.objectName() == saved_pos['relative_below']:
+                            area = max_main_window.dockWidgetArea(widget)
+                            if area == dock_area and not widget.isFloating():
+                                reference_widget = widget
+                                print(f"[POSITION] Found reference widget (will split above it)")
+                                break
+
+                # Restore using reference widget if found
+                if reference_widget:
+                    print(f"[POSITION] Using splitDockWidget to restore relative position")
+                    print(f"[POSITION] Reference widget Y: {reference_widget.geometry().y()}")
+
+                    # Add to the area first
+                    max_main_window.addDockWidget(dock_area, layer_manager)
+
+                    # splitDockWidget(after, before, orientation)
+                    # We want to place layer_manager relative to reference_widget
+                    # If we were ABOVE the reference (saved relative_below), split so we appear first (top)
+                    # If we were BELOW the reference (saved relative_above), split so we appear second (bottom)
+
+                    if saved_pos.get('relative_above'):
+                        # We were below the reference widget, so: reference THEN us
+                        print(f"[POSITION] Splitting: reference widget THEN our widget (we're below)")
+                        max_main_window.splitDockWidget(reference_widget, layer_manager, orientation)
+                    else:
+                        # We were above the reference widget, so: us THEN reference
+                        print(f"[POSITION] Splitting: our widget THEN reference widget (we're above)")
+                        max_main_window.splitDockWidget(layer_manager, reference_widget, orientation)
+
+                    print(f"[POSITION] After split, our Y: {layer_manager.geometry().y()}")
+                else:
+                    print(f"[POSITION] No reference widget found, using default position")
+                    max_main_window.addDockWidget(dock_area, layer_manager)
+
+                print(f"[POSITION] setFloating(False) to ensure docked")
+                layer_manager.setFloating(False)  # Explicitly ensure it stays docked
 
             # Restore size
+            print(f"[POSITION] Resizing to {saved_pos['width']}x{saved_pos['height']}")
             layer_manager.resize(saved_pos['width'], saved_pos['height'])
         else:
             # No main window (testing mode) - just apply position
