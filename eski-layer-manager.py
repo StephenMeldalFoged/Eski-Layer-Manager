@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.14.0
+Version: 0.15.0
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.14.0"
+VERSION = "0.15.0"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -52,10 +52,10 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, layer_manager, parent=None):
         super(InlineIconDelegate, self).__init__(parent)
         self.layer_manager = layer_manager
-        self.icon_size = 16
-        self.icon_spacing = 4
-        self.plus_icon_size = 18  # Bigger size for plus icon
-        self.plus_icon_spacing = 4  # Extra spacing before plus icon
+        self.icon_size = 14  # Compact size to save vertical space
+        self.icon_spacing = 3
+        self.plus_icon_size = 14  # Match main icon size for consistency
+        self.plus_icon_spacing = 3  # Compact spacing
 
     def _get_visual_row_number(self, index):
         """Calculate the visual row number by counting all visible rows from top"""
@@ -182,6 +182,47 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
         painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, layer_name)
 
         painter.restore()
+
+    def createEditor(self, parent, option, index):
+        """Create editor widget for inline editing"""
+        editor = QtWidgets.QLineEdit(parent)
+        return editor
+
+    def setEditorData(self, editor, index):
+        """Set initial text in editor"""
+        value = index.data(QtCore.Qt.DisplayRole)
+        editor.setText(value)
+
+    def setModelData(self, editor, model, index):
+        """Save edited text back to model"""
+        model.setData(index, editor.text(), QtCore.Qt.EditRole)
+
+    def setEditorGeometry(self, editor, option, index):
+        """Position editor at the correct location where layer name is painted"""
+        # Calculate X offset to match where layer name is painted
+        x_offset = 0
+
+        # Get the item to check for icons
+        item = self.layer_manager.layer_tree.itemFromIndex(index)
+        if item:
+            # Add offset for visibility icon if present
+            vis_icon = item.data(0, QtCore.Qt.UserRole + 1)
+            if vis_icon:
+                x_offset += self.icon_size + self.icon_spacing
+
+            # Add offset for add selection icon if present
+            add_icon = item.data(0, QtCore.Qt.UserRole + 2)
+            if add_icon:
+                x_offset += self.plus_icon_spacing + self.plus_icon_size + self.icon_spacing
+
+        # Position editor at the calculated offset
+        editor_rect = QtCore.QRect(
+            option.rect.left() + x_offset,
+            option.rect.top(),
+            option.rect.width() - x_offset,
+            option.rect.height()
+        )
+        editor.setGeometry(editor_rect)
 
 
 class CustomTreeWidget(QtWidgets.QTreeWidget):
@@ -696,7 +737,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             }
 
             QTreeView::item {
-                padding: 2px;
+                padding: 0px;
+                height: 16px;
             }
 
             /* Clear all branch styling - we draw everything in drawBranches */
@@ -718,8 +760,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.layer_tree.customContextMenuRequested.connect(self.on_layer_context_menu)
 
-        # Set icon size larger for better visibility
-        self.layer_tree.setIconSize(QtCore.QSize(16, 16))
+        # Set compact icon size to save vertical space
+        self.layer_tree.setIconSize(QtCore.QSize(14, 14))
 
         # Set uniform row heights for better icon display
         self.layer_tree.setUniformRowHeights(True)
@@ -764,9 +806,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             }
             QTreeWidget::item {
                 padding: 0px;
-                padding-left: 2px;
-                padding-right: 2px;
-                height: 18px;
+                height: 16px;
                 border: none;
             }
             QTreeWidget::item:selected {
