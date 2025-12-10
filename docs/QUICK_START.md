@@ -8,7 +8,7 @@ The Eski Layer Manager now implements a **proper singleton pattern** to prevent 
 
 1. Run the installer script in 3ds Max:
    ```
-   File → Run Script → install-macro-button.ms
+   File → Run Script → install-Eski-Layer-Manager.ms
    ```
 
 2. Click "Install / Upgrade to Latest Version"
@@ -97,7 +97,7 @@ If you see multiple windows:
    ```
 
 2. **Reinstall macro:**
-   Run `install-macro-button.ms` again
+   Run `install-Eski-Layer-Manager.ms` again
 
 3. **Restart 3ds Max:**
    Close Max and reopen
@@ -120,7 +120,7 @@ For developers and technical users, see:
 | File | Purpose |
 |------|---------|
 | `eski-layer-manager.py` | Main tool (with singleton) |
-| `install-macro-button.ms` | Installer/Upgrader |
+| `install-Eski-Layer-Manager.ms` | Installer/Upgrader |
 | `test_singleton.py` | Automated test suite |
 | `QUICK_START.md` | This file |
 | `SINGLETON_IMPLEMENTATION.md` | Technical docs |

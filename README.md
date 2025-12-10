@@ -22,7 +22,7 @@ A dockable layer and object manager utility for Autodesk 3ds Max.
 
 1. **Install the macro button** (one-time setup):
    - In 3ds Max, press **F11** to open MAXScript Editor
-   - Go to **File > Open** and select `install-macro-button.ms`
+   - Go to **File > Open** and select `install-Eski-Layer-Manager.ms`
    - Press **Ctrl+E** to execute the script
    - You'll see a confirmation message
 

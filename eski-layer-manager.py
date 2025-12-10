@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.13.2
+Version: 0.14.0
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.13.2"
+VERSION = "0.14.0"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -191,6 +191,9 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         super(CustomTreeWidget, self).__init__(parent)
         self.layer_manager = None  # Will be set by EskiLayerManager
 
+        # Enable drops from external sources (like Scene Explorer)
+        self.setAcceptDrops(True)
+
     def mousePressEvent(self, event):
         """Intercept mouse press - only allow selection when clicking on layer name"""
         item = self.itemAt(event.pos())
@@ -230,10 +233,56 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         # If clicking on name region or anywhere else, allow normal selection
         super(CustomTreeWidget, self).mousePressEvent(event)
 
+    def dragEnterEvent(self, event):
+        """Accept drag events from external sources (Scene Explorer) and internal sources"""
+        # Accept all drag events - we'll filter in dropEvent
+        event.acceptProposedAction()
+        print("[DRAG] dragEnterEvent - accepting drag")
+
+    def dragMoveEvent(self, event):
+        """Accept drag move events"""
+        event.acceptProposedAction()
+
     def dropEvent(self, event):
-        """Handle drop event to reparent layers or reassign objects to layers in 3ds Max"""
+        """Handle drop event to reparent layers, reassign objects, or accept external drops from Scene Explorer"""
+        print(f"[DROP] dropEvent triggered")
+
         # Check if this is a drag from the objects tree
         source_widget = event.source()
+
+        # Handle external drops (from Scene Explorer or other Qt widgets outside our app)
+        if source_widget is None or (source_widget != self and source_widget != getattr(self.layer_manager, 'objects_tree', None)):
+            print(f"[DROP] External drop detected (source: {source_widget})")
+
+            # Get target layer
+            target_item = self.itemAt(event.pos())
+            if not target_item:
+                print(f"[DROP] No target layer found")
+                event.ignore()
+                return
+
+            target_layer_name = target_item.text(0)
+            print(f"[DROP] Target layer: {target_layer_name}")
+
+            # Try to get the currently selected objects in 3ds Max
+            # When user drags from Scene Explorer, those objects should be selected
+            if rt and self.layer_manager:
+                try:
+                    selection = rt.selection
+                    if len(selection) > 0:
+                        print(f"[DROP] Found {len(selection)} selected objects in Max")
+                        object_names = [str(obj.name) for obj in selection]
+                        print(f"[DROP] Assigning objects to layer: {object_names}")
+                        self.layer_manager.reassign_objects_to_layer(object_names, target_layer_name)
+                        event.accept()
+                        return
+                    else:
+                        print(f"[DROP] No objects selected in Max")
+                except Exception as e:
+                    print(f"[DROP ERROR] Failed to get selection: {e}")
+
+            event.ignore()
+            return
 
         # If dragging from objects tree (not layer tree)
         if source_widget != self and hasattr(self.layer_manager, 'objects_tree') and source_widget == self.layer_manager.objects_tree:
@@ -451,6 +500,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Track the last known current layer for sync detection
         self.last_current_layer = None
 
+        # Track which layer is currently displayed in the objects tree
+        self.current_objects_layer = None
+
         # Track visibility states for sync detection {layer_name: is_hidden}
         self.last_visibility_states = {}
 
@@ -624,11 +676,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         top_layout = QtWidgets.QVBoxLayout(top_widget)
         top_layout.setContentsMargins(5, 5, 5, 5)
 
-        # Add label for layers section
-        layers_label = QtWidgets.QLabel("Layers")
-        layers_label.setStyleSheet("font-weight: bold; padding: 2px;")
-        top_layout.addWidget(layers_label)
-
         # Create tree widget for layers (using custom widget that controls selection)
         self.layer_tree = CustomTreeWidget()
         self.layer_tree.layer_manager = self  # Set reference for drag-and-drop
@@ -690,8 +737,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         top_layout.addWidget(self.layer_tree)
 
         # Bottom section - object list
-        bottom_widget = QtWidgets.QWidget()
-        bottom_layout = QtWidgets.QVBoxLayout(bottom_widget)
+        self.bottom_widget = QtWidgets.QWidget()
+        bottom_layout = QtWidgets.QVBoxLayout(self.bottom_widget)
         bottom_layout.setContentsMargins(5, 5, 5, 5)
 
         # Add label for objects section
@@ -742,7 +789,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Add widgets to splitter
         self.splitter.addWidget(top_widget)
-        self.splitter.addWidget(bottom_widget)
+        self.splitter.addWidget(self.bottom_widget)
 
         # Set initial sizes (60% top, 40% bottom)
         self.splitter.setSizes([240, 160])
@@ -855,7 +902,21 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         button_layout.addWidget(delete_layer_btn)
 
-        top_layout.insertLayout(1, button_layout)
+        # Add spacer to push the Objects toggle button to the right
+        button_layout.addStretch()
+
+        # Add Objects toggle button
+        self.objects_toggle_btn = QtWidgets.QPushButton("Objects")
+        self.objects_toggle_btn.setCheckable(True)  # Makes it a toggle button
+        self.objects_toggle_btn.setChecked(True)  # Start checked (objects visible by default)
+        self.objects_toggle_btn.setToolTip("Toggle Objects Panel")
+        self.objects_toggle_btn.clicked.connect(self.on_objects_toggle)
+        self.objects_toggle_btn.setFixedHeight(32)  # Match other button height
+        self.objects_toggle_btn.setMinimumWidth(70)  # Minimum width for text
+
+        button_layout.addWidget(self.objects_toggle_btn)
+
+        top_layout.insertLayout(0, button_layout)
 
         # Populate layers from 3ds Max
         self.populate_layers()
@@ -1041,6 +1102,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
     def populate_objects(self, layer_name):
         """Populate the objects tree with objects from the specified layer"""
         self.objects_tree.clear()
+
+        # Track which layer we're currently displaying
+        self.current_objects_layer = layer_name
 
         if rt is None:
             # Testing mode - add dummy objects
@@ -1409,7 +1473,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             print(f"[OBJECTS] Reassigned {success_count}/{len(object_names)} objects to layer '{target_layer_name}'")
 
             # Refresh the objects tree to show updated list
-            self.populate_objects(target_layer_name)
+            # Refresh the currently displayed layer (where objects were dragged from)
+            if self.current_objects_layer:
+                self.populate_objects(self.current_objects_layer)
 
         except Exception as e:
             import traceback
@@ -1497,6 +1563,19 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             import traceback
             error_msg = f"Error deleting layer: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
+
+    def on_objects_toggle(self):
+        """Handle Objects toggle button click - show/hide objects panel"""
+        is_checked = self.objects_toggle_btn.isChecked()
+
+        if is_checked:
+            # Show objects panel
+            self.bottom_widget.show()
+            print(f"[DEBUG] Objects panel shown")
+        else:
+            # Hide objects panel
+            self.bottom_widget.hide()
+            print(f"[DEBUG] Objects panel hidden")
 
     def toggle_expand_collapse(self, item):
         """Toggle expand/collapse state of a layer with children"""

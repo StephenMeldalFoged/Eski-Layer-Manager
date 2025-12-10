@@ -84,7 +84,7 @@ def get_instance_status():
 ```
 **Why:** Provides visibility into the singleton state for troubleshooting.
 
-### Changes to `install-macro-button.ms`
+### Changes to `install-Eski-Layer-Manager.ms`
 
 #### Updated Import Pattern (Lines 145-150)
 ```maxscript
@@ -187,7 +187,7 @@ assert id(instance1) == id(instance2)  # Must be True
    - Added debug print statements
    - Added `get_instance_status()` helper
 
-2. **E:\Github\Eski-Layer-Manager\install-macro-button.ms**
+2. **E:\Github\Eski-Layer-Manager\install-Eski-Layer-Manager.ms**
    - Updated comments to explain singleton preservation
    - No functional change (already correct - no reload)
 

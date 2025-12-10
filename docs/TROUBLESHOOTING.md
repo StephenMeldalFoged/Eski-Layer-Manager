@@ -30,7 +30,7 @@
    ```
 
 4. **Reinstall the macro**
-   - Run `install-macro-button.ms`
+   - Run `install-Eski-Layer-Manager.ms`
    - Choose "Install / Upgrade to Latest Version"
    - This ensures the macro uses the correct import pattern
 
@@ -155,7 +155,7 @@ print(f"Instance 2 ID: {id(instance2)}")
 **Cause:** The Python file is not in the scripts directory or path is incorrect.
 
 **Solution:**
-1. Run the installer: `install-macro-button.ms`
+1. Run the installer: `install-Eski-Layer-Manager.ms`
 2. Verify file location: Should be in `getDir #userScripts`
 3. Check for typos: File must be named exactly `eski_layer_manager.py` (underscore, not hyphen)
 

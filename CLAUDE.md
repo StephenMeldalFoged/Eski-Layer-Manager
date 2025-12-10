@@ -6,7 +6,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, improving upon the built-in layer management tools.
 
-**Current Version:** 0.13.2
+**Current Version:** 0.14.0
+
+## Quick Reference
+
+```bash
+# Test UI standalone (no 3ds Max)
+python eski-layer-manager.py
+
+# Install/upgrade in 3ds Max
+# F11 → File > Open → install-Eski-Layer-Manager.ms → Ctrl+E
+
+# Test singleton pattern (in 3ds Max)
+python.ExecuteFile "E:\\Github\\Eski-Layer-Manager\\tests\\test_singleton.py"
+
+# Launch from 3ds Max Python console
+import eski_layer_manager
+eski_layer_manager.show_layer_manager()
+```
+
+## Project Structure
+
+```
+Eski-Layer-Manager/
+├── eski-layer-manager.py          # Main Python application (830+ lines)
+├── install-Eski-Layer-Manager.ms        # MAXScript installer with GUI
+├── CLAUDE.md                       # This file - development guide
+├── README.md                       # User-facing documentation
+├── docs/
+│   ├── wishlist.txt               # Feature specifications and priorities
+│   ├── TROUBLESHOOTING.md         # Common issues and solutions
+│   ├── QUICK_START.md             # Installation quickstart
+│   ├── SINGLETON_*.md             # Singleton pattern documentation
+│   └── *.txt                      # Version history, notes, reminders
+└── tests/
+    └── test_singleton.py          # Singleton pattern test script
+```
 
 ## Technology Stack
 
@@ -40,7 +75,7 @@ This is the recommended pattern for 3ds Max tool development when building compl
 - **Split-view UI:** Top section shows layers tree, bottom section shows objects in selected layer
 - **Object management:** Select objects in tree to select them in scene, drag objects to reassign to different layers
 
-**install-macro-button.ms** - MAXScript installer with GUI
+**install-Eski-Layer-Manager.ms** - MAXScript installer with GUI
 - Creates macro button in "Eski Tools" category
 - Auto-copies Python file from repo to user scripts directory
 - Searches multiple locations: script folder, Desktop, Downloads, Documents
@@ -131,11 +166,30 @@ Full support for parent-child layer relationships:
 ### Bi-Directional Sync (v0.5.0+)
 
 Two mechanisms keep UI in sync with 3ds Max:
+
 1. **Timer-based polling (500ms):** Checks current layer and visibility state changes
+   ```python
+   self.refresh_timer = QtCore.QTimer()
+   self.refresh_timer.timeout.connect(self.check_for_updates)
+   self.refresh_timer.start(500)  # 500ms interval
+   ```
+
 2. **Callback system:** Registers MAXScript callbacks for layer events
-   - Full refresh on: `layerCreated`, `layerDeleted`, `nodeLayerChanged`
-   - Selection update on: `layerCurrent`
-   - Close and reopen on: scene file events
+   ```python
+   # Register callbacks via pymxs
+   rt.callbacks.addScript(rt.Name("layerCreated"), "python.execute('...')", id=rt.Name("EskiLayerMgr"))
+   ```
+
+   Events monitored:
+   - `layerCreated`, `layerDeleted` → Full layer tree refresh
+   - `nodeLayerChanged` → Update layer object counts
+   - `layerCurrent` → Highlight active layer
+   - `filePostOpen`, `systemPostReset`, `systemPostNew` → Close and reopen window
+
+**Important:** Callbacks must be unregistered in `closeEvent()` to prevent memory leaks:
+```python
+rt.callbacks.removeScripts(id=rt.Name("EskiLayerMgr"))
+```
 
 ### Objects Tree (v0.10.0+)
 
@@ -151,7 +205,22 @@ Bottom panel shows objects in the selected layer:
   - `on_object_selection_changed()` - Syncs tree selection to scene selection
   - `reassign_objects_to_layer()` - Handles drag-drop reassignment from objects to layers
 
+### Position Persistence (v0.11.7+)
+
+Window docking position and state are preserved between sessions:
+- Position stored relative to 3ds Max main window
+- Dock stacking order tracked and restored
+- Settings persist across 3ds Max restarts
+- Toggle feature available through UI
+
 ## Development Workflow
+
+### Git Branching Strategy
+
+- **main**: Stable releases with version tags
+- **Feature branches**: Named descriptively (e.g., `Objects-Tasks`)
+- Version tags follow semantic versioning (v0.x.x)
+- Detailed version history available in `docs/Eski-LayerManager-By-Claude-Version-History.txt`
 
 ### Testing the UI
 
@@ -161,9 +230,22 @@ python eski-layer-manager.py
 ```
 This runs standalone mode with a basic Qt window (no 3ds Max integration).
 
+### Running Tests
+
+Test the singleton pattern implementation:
+```maxscript
+-- In 3ds Max MAXScript Listener:
+python.ExecuteFile "E:\\Github\\Eski-Layer-Manager\\tests\\test_singleton.py"
+```
+
+This verifies:
+- Only one instance is created when called multiple times
+- Instance is properly reused across calls
+- Singleton pattern survives module reloads
+
 ### Installing in 3ds Max
 
-1. Keep `install-macro-button.ms` and `eski-layer-manager.py` in the same directory
+1. Keep `install-Eski-Layer-Manager.ms` and `eski-layer-manager.py` in the same directory
 2. In 3ds Max: F11 → File > Open → select installer script → Ctrl+E
 3. Click "Install / Upgrade to Latest Version"
 4. Installer auto-copies Python file to user scripts directory
@@ -182,16 +264,54 @@ After modifying code:
 
 When updating versions:
 1. **Python script version** (`eski-layer-manager.py`): Update `VERSION` constant for EVERY change
-2. **Installer version** (`install-macro-button.ms`): Update `installerVersion` ONLY when installer script changes
+2. **Installer version** (`install-Eski-Layer-Manager.ms`): Update `installerVersion` ONLY when installer script changes
 
 Both versions should match for major releases, but installer version may lag behind if only Python code changes.
 
 Update these locations when bumping versions:
 - eski-layer-manager.py line 5: Docstring `Version: X.X.X`
 - eski-layer-manager.py line 36: `VERSION = "X.X.X"`
-- install-macro-button.ms line 6: `local installerVersion = "X.X.X"` (only when installer changes)
+- install-Eski-Layer-Manager.ms line 6: `local installerVersion = "X.X.X"` (only when installer changes)
 
 ## Important 3ds Max Integration Notes
+
+### MAXScript API via pymxs
+
+Key patterns for accessing 3ds Max layer API:
+
+```python
+from pymxs import runtime as rt
+
+# Layer Manager access
+layer_manager = rt.layerManager
+layer_count = layer_manager.count
+layer = layer_manager.getLayer(index)  # 0-based index
+layer = layer_manager.getLayerFromName("LayerName")
+
+# Layer properties (read/write)
+layer.name           # Layer name
+layer.ishidden       # Visibility state
+layer.isfrozen       # Frozen state
+layer.current        # Is current layer
+layer.wireColor      # Wireframe color
+
+# Layer hierarchy (3ds Max 2026+)
+parent = layer.getParent()           # Returns parent or rt.undefined for root
+layer.setParent(parent)              # Set parent (use rt.undefined for root)
+num_children = layer.getNumChildren()
+child = layer.getChild(index)        # 1-based index (MAXScript convention)
+
+# Object operations
+layer.select(True)                   # Select all objects on layer
+num_objects = layer.getNumNodes()
+layer.addnode(node)                  # Assign object to layer
+nodes_array = layer.nodes            # Get all nodes on layer
+
+# Current layer
+rt.layerManager.current = layer      # Set active layer
+```
+
+**Critical:** MAXScript uses **1-based indexing** for children (`getChild()`), but Python/pymxs uses **0-based indexing** for layers (`getLayer()`).
 
 ### Python Path Handling
 The macro button adds `#userScripts` to Python's `sys.path` at runtime because 3ds Max doesn't automatically include user script directories in Python's search path.
@@ -224,6 +344,43 @@ item.current_item_y = option.rect.y()
 ```
 
 Always extract primitive values (int, float, string) from Qt objects when storing on Python objects.
+
+## Debugging
+
+### Print Statements
+All debug output goes to 3ds Max's MAXScript Listener (F11). Use standard Python `print()`:
+```python
+print(f"[DEBUG] Layer count: {layer_manager.count}")
+```
+
+### Common Debugging Commands
+
+In 3ds Max Python console:
+```python
+# Check if module is loaded
+import sys
+'eski_layer_manager' in sys.modules
+
+# Force module reload (for development)
+import importlib
+importlib.reload(sys.modules['eski_layer_manager'])
+
+# Check singleton status
+import eski_layer_manager
+eski_layer_manager.get_instance_status()
+
+# Inspect layer manager
+from pymxs import runtime as rt
+rt.layerManager.count  # Number of layers
+rt.layerManager.current.name  # Current layer name
+```
+
+### Callback Debugging
+Check registered callbacks:
+```maxscript
+-- In MAXScript Listener
+callbacks.show()
+```
 
 ## Common Issues
 
