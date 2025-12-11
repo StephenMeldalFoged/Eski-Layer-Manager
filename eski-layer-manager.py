@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.16.1
+Version: 0.17.0
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.16.1"
+VERSION = "0.17.0"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -180,6 +180,21 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
 
         painter.setFont(option.font)
         painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, layer_name)
+
+        # 4. Draw green dot indicator if layer contains selected objects (right-aligned)
+        if layer_name in self.layer_manager.layers_with_selection:
+            # Green dot size
+            dot_size = 6
+            dot_margin = 8  # Distance from right edge
+
+            # Position on the right side
+            dot_x = option.rect.right() - dot_margin - dot_size
+            dot_y = y + (h - dot_size) // 2  # Center vertically
+
+            # Draw green circle
+            painter.setBrush(QtGui.QColor(0, 255, 0))  # Bright green
+            painter.setPen(QtCore.Qt.NoPen)  # No outline
+            painter.drawEllipse(dot_x, dot_y, dot_size, dot_size)
 
         painter.restore()
 
@@ -580,6 +595,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Track visibility states for sync detection {layer_name: is_hidden}
         self.last_visibility_states = {}
+
+        # Track layers that contain selected objects (for green dot indicator)
+        self.layers_with_selection = set()
 
         # Load native 3ds Max icons for visibility and add selection
         self.load_visibility_icons()
@@ -2156,9 +2174,40 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         # Update the icon in the tree (single column layout - column 0)
                         self._update_layer_icon_recursive(self.layer_tree.invisibleRootItem(), layer_name, is_hidden)
 
+            # Check which layers contain selected objects
+            self.update_selection_indicators()
+
         except Exception as e:
             # Silently fail - this runs frequently so don't spam errors
             pass
+
+    def update_selection_indicators(self):
+        """Update which layers contain selected objects (for green dot indicators)"""
+        if rt is None:
+            return
+
+        try:
+            # Get currently selected objects
+            selection = rt.selection
+
+            # Build set of layer names that contain selected objects
+            new_layers_with_selection = set()
+            for obj in selection:
+                try:
+                    if hasattr(obj, 'layer') and obj.layer:
+                        layer_name = str(obj.layer.name)
+                        new_layers_with_selection.add(layer_name)
+                except:
+                    pass
+
+            # Only update if the set changed
+            if new_layers_with_selection != self.layers_with_selection:
+                self.layers_with_selection = new_layers_with_selection
+                # Trigger repaint of the entire tree to update indicators
+                self.layer_tree.viewport().update()
+
+        except Exception as e:
+            pass  # Silently fail
 
     def setup_callbacks(self):
         """Setup 3ds Max callbacks for automatic layer refresh"""
