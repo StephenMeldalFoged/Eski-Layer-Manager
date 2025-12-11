@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.17.2
+Version: 0.18.0
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.17.2"
+VERSION = "0.18.0"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -574,6 +574,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Setup timer to poll for current layer changes (fallback if callback doesn't work)
         self.setup_sync_timer()
+
+        # Setup quad menu for layer context menu
+        self.setup_quad_menu()
 
     def load_visibility_icons(self):
         """Load native 3ds Max visibility icons using Qt resource system"""
@@ -1894,21 +1897,30 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.editItem(item, 0)
 
     def on_layer_context_menu(self, position):
-        """Handle right-click context menu on layer"""
+        """Handle right-click context menu on layer - show MaxScript quad menu"""
+        if rt is None:
+            return
+
         item = self.layer_tree.itemAt(position)
         if item is None:
             return
 
-        # Create context menu
-        menu = QtWidgets.QMenu(self)
-        rename_action = menu.addAction("Rename Layer")
+        # Get layer name
+        layer_name = item.text(0)
 
-        # Show menu and get selected action
-        action = menu.exec(self.layer_tree.viewport().mapToGlobal(position))
+        # Don't show menu for test mode items
+        if layer_name.startswith("[TEST MODE]"):
+            return
 
-        if action == rename_action:
-            # Trigger inline rename on column 0 (single column with name)
-            self.on_layer_double_clicked(item, 0)
+        try:
+            # Set the global layer name variable in MaxScript
+            rt.execute(f'global EskiLayerManager_ContextLayerName = "{layer_name}"')
+
+            # Show the quad menu
+            rt.execute('menuMan.showQuadMenu "EskiLayerManagerQuad"')
+
+        except Exception as e:
+            print(f"[ERROR] Failed to show quad menu: {e}")
 
     def on_layer_renamed(self, item, column):
         """Handle layer rename after inline editing (single column layout)"""
@@ -2120,6 +2132,58 @@ fn EskiLayerManagerSceneCallback = (
             pass  # Debug print removed
         except Exception as e:
             pass  # Debug print removed
+
+    def setup_quad_menu(self):
+        """Setup MaxScript quad menu for layer context menu (editable in Max menu editor)"""
+        if rt is None:
+            return
+
+        try:
+            # Create MaxScript quad menu definition
+            quad_menu_code = """
+-- Eski Layer Manager Quad Menu
+-- This menu is editable in Customize User Interface > Quad Menus
+
+-- Global variable to store the clicked layer name
+global EskiLayerManager_ContextLayerName = ""
+
+-- Action for Rename Layer
+macroScript EskiLayerManager_RenameLayer
+    category:"Eski Layer Manager"
+    buttonText:"Rename Layer"
+    toolTip:"Rename the selected layer"
+(
+    -- Call Python to perform the rename
+    python.Execute ("import eski_layer_manager; eski_layer_manager.rename_layer_from_quad_menu('" + EskiLayerManager_ContextLayerName + "')")
+)
+
+-- Create the quad menu if it doesn't exist
+if (menuMan.findQuadMenu "EskiLayerManagerQuad") == undefined then
+(
+    local eskiQuad = menuMan.createQuadMenu "EskiLayerManagerQuad" "Eski Layer Manager"
+
+    -- Create menu and add items
+    local eskiMenu = menuMan.createMenu "Eski Layer Actions"
+    local eskiMenuItem = menuMan.createActionItem "EskiLayerManager_RenameLayer" "Eski Layer Manager"
+    eskiMenu.addItem eskiMenuItem -1
+
+    -- Add menu to quad (position 1 = upper-left quadrant)
+    eskiQuad.addMenu eskiMenu 1
+
+    -- Register the quad menu
+    menuMan.registerQuadMenu eskiQuad
+
+    format "[ESKI] Quad menu registered\\n"
+)
+else
+(
+    format "[ESKI] Quad menu already exists\\n"
+)
+"""
+            rt.execute(quad_menu_code)
+
+        except Exception as e:
+            print(f"[ERROR] Failed to setup quad menu: {e}")
 
     def remove_callbacks(self):
         """Remove 3ds Max callbacks"""
@@ -2423,6 +2487,32 @@ def refresh_on_scene_change():
         except (RuntimeError, AttributeError):
             # Widget was deleted
             _layer_manager_instance[0] = None
+
+
+def rename_layer_from_quad_menu(layer_name):
+    """
+    Called from MaxScript quad menu to rename a layer
+    Triggers the inline rename editor for the specified layer
+    """
+    global _layer_manager_instance
+
+    if _layer_manager_instance[0] is not None:
+        try:
+            # Check if widget is still valid
+            _layer_manager_instance[0].isVisible()
+
+            # Find the layer item in the tree
+            item = _layer_manager_instance[0]._find_tree_item_by_name(layer_name)
+            if item:
+                # Trigger the rename by calling the double-click handler
+                _layer_manager_instance[0].on_layer_double_clicked(item, 0)
+            else:
+                print(f"[ERROR] Layer '{layer_name}' not found in tree")
+
+        except (RuntimeError, AttributeError) as e:
+            # Widget was deleted
+            _layer_manager_instance[0] = None
+            print(f"[ERROR] Layer manager instance invalid: {e}")
 
 
 def get_instance_status():
