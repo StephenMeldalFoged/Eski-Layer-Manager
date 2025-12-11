@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.17.1
+Version: 0.17.2
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.17.1"
+VERSION = "0.17.2"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -846,6 +846,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Set initial sizes (60% top, 40% bottom)
         self.splitter.setSizes([240, 160])
 
+        # Hide objects panel by default (Objects button starts unchecked)
+        self.bottom_widget.hide()
+
         # Add splitter to main layout
         main_layout.addWidget(self.splitter)
 
@@ -960,7 +963,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Add Objects toggle button
         self.objects_toggle_btn = QtWidgets.QPushButton("Objects")
         self.objects_toggle_btn.setCheckable(True)  # Makes it a toggle button
-        self.objects_toggle_btn.setChecked(True)  # Start checked (objects visible by default)
+        self.objects_toggle_btn.setChecked(False)  # Start unchecked (objects hidden by default)
         self.objects_toggle_btn.setToolTip("Toggle Objects Panel")
         self.objects_toggle_btn.clicked.connect(self.on_objects_toggle)
         self.objects_toggle_btn.setFixedHeight(32)  # Match other button height
