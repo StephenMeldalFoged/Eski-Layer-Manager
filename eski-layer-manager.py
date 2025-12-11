@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.15.6
+Version: 0.15.10
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.15.6"
+VERSION = "0.15.10"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -1148,6 +1148,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
     def populate_objects(self, layer_name):
         """Populate the objects tree with objects from the specified layer"""
+        # Show progress start
+        self.progress_bar.setValue(30)
+
         self.objects_tree.clear()
 
         # Track which layer we're currently displaying
@@ -1163,6 +1166,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             for obj_name in test_objects:
                 item = QtWidgets.QTreeWidgetItem(self.objects_tree, [obj_name])
                 # No icons for objects - just the name
+            # Complete progress
+            self.progress_bar.setValue(100)
+            QtCore.QTimer.singleShot(200, lambda: self.progress_bar.setValue(0))
             return
 
         try:
@@ -1170,10 +1176,13 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             layer = self._find_layer_by_name(layer_name)
             if not layer:
                 print(f"[OBJECTS] Layer '{layer_name}' not found")
+                self.progress_bar.setValue(0)
                 return
 
             # Get all objects in the scene
             all_nodes = rt.objects
+
+            self.progress_bar.setValue(50)
 
             # Filter objects that belong to this layer
             layer_objects = []
@@ -1185,6 +1194,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     pass
 
             print(f"[OBJECTS] Found {len(layer_objects)} objects in layer '{layer_name}'")
+
+            self.progress_bar.setValue(70)
 
             # Sort objects by name
             layer_objects.sort(key=lambda x: str(x.name).lower())
@@ -1199,10 +1210,18 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 except Exception as e:
                     print(f"[ERROR] Failed to add object to tree: {e}")
 
+            self.progress_bar.setValue(90)
+
+            # Complete progress
+            self.progress_bar.setValue(100)
+            QtCore.QTimer.singleShot(200, lambda: self.progress_bar.setValue(0))
+
         except Exception as e:
             print(f"[ERROR] populate_objects failed: {e}")
             import traceback
             traceback.print_exc()
+            # Reset progress on error
+            self.progress_bar.setValue(0)
 
     def select_active_layer(self):
         """Find and select the currently active layer in the tree"""
@@ -1448,6 +1467,32 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         return None
 
+    def _find_tree_item_by_name(self, layer_name):
+        """Recursively search for a tree item by layer name"""
+        def search_recursive(parent_item):
+            """Recursively search children"""
+            for i in range(parent_item.childCount()):
+                child = parent_item.child(i)
+                if child.text(0) == layer_name:  # Column 0 in single column layout
+                    return child
+                # Search this child's children
+                result = search_recursive(child)
+                if result:
+                    return result
+            return None
+
+        # Search top-level items first
+        for i in range(self.layer_tree.topLevelItemCount()):
+            item = self.layer_tree.topLevelItem(i)
+            if item.text(0) == layer_name:
+                return item
+            # Search children
+            result = search_recursive(item)
+            if result:
+                return result
+
+        return None
+
     def add_selection_to_layer(self, layer_name):
         """Add all currently selected objects to the specified layer"""
         if rt is None:
@@ -1617,9 +1662,30 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             if new_layer:
                 # Set the layer name
                 new_layer.setName("Layer")
+                new_layer_name = str(new_layer.name)
 
             # Refresh the layer list to show the new layer
             self.populate_layers()
+
+            # Find the newly created layer in the tree and enter rename mode
+            # Use a timer to delay editing until after the tree is fully updated
+            if new_layer:
+                def start_rename():
+                    item = self._find_tree_item_by_name(new_layer_name)
+                    if item:
+                        # Select the item
+                        self.layer_tree.setCurrentItem(item)
+                        # Scroll to make it visible
+                        self.layer_tree.scrollToItem(item)
+                        # Set the editable flag (required for editItem to work)
+                        self.layer_tree.blockSignals(True)
+                        item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+                        self.layer_tree.blockSignals(False)
+                        # Enter edit mode (column 0 is the single column with all content)
+                        self.layer_tree.editItem(item, 0)
+
+                # Delay by 100ms to ensure tree is fully populated and painted
+                QtCore.QTimer.singleShot(100, start_rename)
 
         except Exception as e:
             import traceback
@@ -1638,7 +1704,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         selected_item = selected_items[0]
-        layer_name = selected_item.text(3).lstrip()  # Column 3 is layer name, strip indentation
+        layer_name = selected_item.text(0)  # Column 0 in single column layout
 
         try:
             # Find the layer (search recursively for nested layers)
