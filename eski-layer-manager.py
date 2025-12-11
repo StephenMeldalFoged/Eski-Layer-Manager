@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.16.0
+Version: 0.16.1
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.16.0"
+VERSION = "0.16.1"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -1479,27 +1479,41 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     return
 
                 # Show progress
+                self.progress_bar.setValue(30)
+
+                # Get the new visibility state (toggled)
+                new_hidden_state = not layer.ishidden
+
+                # Toggle visibility - set the layer hidden state
+                layer.ishidden = new_hidden_state
+
                 self.progress_bar.setValue(50)
 
-                # Toggle visibility
-                layer.ishidden = not layer.ishidden
+                # Also hide/unhide all objects on this layer in the viewport
+                # This ensures objects actually disappear/appear in the scene
+                try:
+                    if layer.nodes:
+                        for node in layer.nodes:
+                            node.isHidden = new_hidden_state
+                except Exception as e:
+                    print(f"[ERROR] Failed to hide/unhide objects: {e}")
+
+                self.progress_bar.setValue(70)
 
                 # Update our internal tracking BEFORE updating UI to prevent sync timer from reverting
-                self.last_visibility_states[layer_name] = layer.ishidden
+                self.last_visibility_states[layer_name] = new_hidden_state
 
                 # Update icon in UserRole+1 (native if available, Unicode fallback otherwise)
                 if self.use_native_icons:
-                    item.setData(0, QtCore.Qt.UserRole + 1, self.icon_hidden if layer.ishidden else self.icon_visible)
+                    item.setData(0, QtCore.Qt.UserRole + 1, self.icon_hidden if new_hidden_state else self.icon_visible)
                 else:
-                    new_icon_text = "✖" if layer.ishidden else "👁"
+                    new_icon_text = "✖" if new_hidden_state else "👁"
                     item.setData(0, QtCore.Qt.UserRole + 1, new_icon_text)
 
                 # Trigger repaint
                 self.layer_tree.update(self.layer_tree.indexFromItem(item))
 
-                # If this layer is currently displayed in objects tree, refresh it
-                if hasattr(self, 'current_objects_layer') and self.current_objects_layer == layer_name:
-                    self.populate_objects(layer_name)
+                self.progress_bar.setValue(85)
 
                 # Force complete viewport refresh to show/hide objects immediately
                 rt.execute("redrawViews #all")
