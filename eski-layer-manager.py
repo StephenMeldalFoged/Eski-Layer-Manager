@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.17.0
+Version: 0.17.1
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.17.0"
+VERSION = "0.17.1"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -304,46 +304,6 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
 
         # Check if this is a drag from the objects tree
         source_widget = event.source()
-
-        # Handle internal object reparenting (dragging within objects tree)
-        if source_widget == self and self == getattr(self.layer_manager, 'objects_tree', None):
-            # Dragging objects within the objects tree to reparent them
-            dragged_items = self.selectedItems()
-            if not dragged_items:
-                event.ignore()
-                return
-
-            dragged_item = dragged_items[0]
-            dragged_object_name = dragged_item.text(0)
-
-            # Get drop position
-            drop_indicator = self.dropIndicatorPosition()
-            target_item = self.itemAt(event.pos())
-
-            # Determine the new parent based on drop position
-            new_parent_name = None
-            if target_item:
-                target_object_name = target_item.text(0)
-
-                if drop_indicator == QtWidgets.QAbstractItemView.OnItem:
-                    # Dropped ON item - make it a child
-                    new_parent_name = target_object_name
-                elif drop_indicator in [QtWidgets.QAbstractItemView.AboveItem, QtWidgets.QAbstractItemView.BelowItem]:
-                    # Dropped ABOVE or BELOW item - make it a sibling (same parent as target)
-                    if target_item.parent():
-                        new_parent_name = target_item.parent().text(0)
-                    else:
-                        new_parent_name = None  # Root level (no parent)
-            else:
-                # Dropped on empty space - make it root
-                new_parent_name = None
-
-            # Call the layer manager to update 3ds Max object hierarchy
-            if self.layer_manager:
-                self.layer_manager.reparent_object(dragged_object_name, new_parent_name)
-
-            event.ignore()
-            return
 
         # Handle external drops (from Scene Explorer or other Qt widgets outside our app)
         if source_widget is None or (source_widget != self and source_widget != getattr(self.layer_manager, 'objects_tree', None)):
@@ -1205,7 +1165,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             traceback.print_exc()
 
     def populate_objects(self, layer_name):
-        """Populate the objects tree with objects from the specified layer (hierarchical)"""
+        """Populate the objects tree with objects from the specified layer (flat list)"""
         # Show progress start
         self.progress_bar.setValue(30)
 
@@ -1215,11 +1175,15 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.current_objects_layer = layer_name
 
         if rt is None:
-            # Testing mode - add dummy objects with hierarchy
-            parent_item = QtWidgets.QTreeWidgetItem(self.objects_tree, ["[TEST] Box001"])
-            child_item = QtWidgets.QTreeWidgetItem(parent_item, ["[TEST] Sphere001"])
-            root_item = QtWidgets.QTreeWidgetItem(self.objects_tree, ["[TEST] Cylinder001"])
-            parent_item.setExpanded(True)
+            # Testing mode - add dummy objects
+            test_objects = [
+                "[TEST] Box001",
+                "[TEST] Sphere001",
+                "[TEST] Cylinder001"
+            ]
+            for obj_name in test_objects:
+                item = QtWidgets.QTreeWidgetItem(self.objects_tree, [obj_name])
+                # No icons for objects - just the name
             # Complete progress
             self.progress_bar.setValue(100)
             QtCore.QTimer.singleShot(200, lambda: self.progress_bar.setValue(0))
@@ -1249,33 +1213,20 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
             print(f"[OBJECTS] Found {len(layer_objects)} objects in layer '{layer_name}'")
 
-            self.progress_bar.setValue(60)
-
-            # Separate root objects (no parent) and child objects
-            root_objects = []
-            for obj in layer_objects:
-                try:
-                    parent = obj.parent
-                    # Check if parent is undefined/None or parent is not in this layer
-                    if parent is None or str(parent) == "undefined":
-                        root_objects.append(obj)
-                    else:
-                        # Check if parent is in the same layer
-                        if hasattr(parent, 'layer') and parent.layer and str(parent.layer.name) != layer_name:
-                            # Parent is in different layer, treat as root in this layer
-                            root_objects.append(obj)
-                except:
-                    # If we can't determine parent, treat as root
-                    root_objects.append(obj)
-
             self.progress_bar.setValue(70)
 
-            # Sort root objects by name
-            root_objects.sort(key=lambda x: str(x.name).lower())
+            # Sort objects by name
+            layer_objects.sort(key=lambda x: str(x.name).lower())
 
-            # Add root objects and their children recursively
-            for obj in root_objects:
-                self._add_object_to_tree(obj, None, layer_objects)
+            # Add each object to the tree (flat list)
+            for obj in layer_objects:
+                try:
+                    obj_name = str(obj.name)
+                    item = QtWidgets.QTreeWidgetItem(self.objects_tree, [obj_name])
+                    # No icons for objects - just the name
+
+                except Exception as e:
+                    print(f"[ERROR] Failed to add object to tree: {e}")
 
             self.progress_bar.setValue(90)
 
@@ -1289,44 +1240,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             traceback.print_exc()
             # Reset progress on error
             self.progress_bar.setValue(0)
-
-    def _add_object_to_tree(self, obj, parent_item, all_layer_objects):
-        """Recursively add object and its children to the tree"""
-        try:
-            obj_name = str(obj.name)
-
-            # Create tree item
-            if parent_item:
-                item = QtWidgets.QTreeWidgetItem(parent_item, [obj_name])
-            else:
-                item = QtWidgets.QTreeWidgetItem(self.objects_tree, [obj_name])
-
-            # Find children of this object (objects that have this as parent)
-            children = []
-            for other_obj in all_layer_objects:
-                try:
-                    if hasattr(other_obj, 'parent') and other_obj.parent:
-                        parent = other_obj.parent
-                        if str(parent) != "undefined" and parent is not None:
-                            # Check if parent name matches
-                            if str(parent.name) == obj_name:
-                                children.append(other_obj)
-                except:
-                    pass
-
-            # Sort children by name
-            children.sort(key=lambda x: str(x.name).lower())
-
-            # Recursively add children
-            for child in children:
-                self._add_object_to_tree(child, item, all_layer_objects)
-
-            # Expand items that have children
-            if children:
-                item.setExpanded(True)
-
-        except Exception as e:
-            print(f"[ERROR] Failed to add object '{obj}' to tree: {e}")
 
     def select_active_layer(self):
         """Find and select the currently active layer in the tree"""
@@ -1932,61 +1845,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         except Exception as e:
             import traceback
             error_msg = f"Error reparenting layer: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
-
-    def reparent_object(self, object_name, new_parent_name):
-        """Reparent an object in 3ds Max"""
-        if rt is None:
-            return
-
-        try:
-            # Find the object to move
-            obj = rt.getNodeByName(object_name)
-            if not obj:
-                print(f"[ERROR] Object '{object_name}' not found")
-                return
-
-            # Prevent circular reference (can't make object its own parent)
-            if new_parent_name == object_name:
-                print(f"[ERROR] Cannot make object '{object_name}' its own parent")
-                return
-
-            # Find the new parent object (or None for root)
-            new_parent = None
-            if new_parent_name:
-                new_parent = rt.getNodeByName(new_parent_name)
-                if not new_parent:
-                    print(f"[ERROR] Parent object '{new_parent_name}' not found")
-                    return
-
-                # Prevent circular reference (can't make object child of its own descendant)
-                temp = new_parent
-                while temp:
-                    parent = temp.parent
-                    if parent and str(parent) != "undefined":
-                        if str(parent.name) == object_name:
-                            print(f"[ERROR] Cannot make object '{object_name}' a child of its descendant '{new_parent_name}'")
-                            return
-                        temp = parent
-                    else:
-                        break
-
-            # Set the new parent
-            if new_parent:
-                obj.parent = new_parent
-                print(f"[OBJECTS] Reparented '{object_name}' under '{new_parent_name}'")
-            else:
-                # Make it a root object by setting parent to undefined
-                obj.parent = rt.undefined
-                print(f"[OBJECTS] Unparented '{object_name}' (now root)")
-
-            # Refresh the objects list to show the new hierarchy
-            if hasattr(self, 'current_objects_layer'):
-                self.populate_objects(self.current_objects_layer)
-
-        except Exception as e:
-            import traceback
-            error_msg = f"Error reparenting object: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
 
     def on_layer_double_clicked(self, item, column):
