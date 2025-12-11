@@ -145,6 +145,15 @@ HONORABLE MENTIONS (Future Features)
    - Quick apply common property combos (frozen+gray, hidden+non-renderable)
    - Per-project layer templates
 
+9. Quad Menu Integration
+   - Right-click quad menu for quick layer operations
+   - Context-sensitive options based on clicked layer/object
+   - Quick access to: Select Objects, Isolate, Hide/Show, Freeze/Unfreeze
+   - "Add Selection to Layer" submenu with layer list
+   - "Move to Layer" submenu
+   - Customizable menu items and keyboard shortcuts
+   - API: Qt context menus, QAction, right-click event handlers
+
 ---
 
 PRIORITY JUSTIFICATION
