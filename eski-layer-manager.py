@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.18.6
+Version: 0.18.7
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.18.6"
+VERSION = "0.18.7"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -1918,32 +1918,35 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             if layer:
                 rt.LayerManager.current = layer
 
-            # Find and show the native Scene Explorer quad menu
-            # The Scene Explorer uses "Scene_Explorer_Quad" for its quad menu
-            show_native_menu = """(
-    -- Find the native Scene Explorer quad menu
-    nativeQuad = menuMan.findQuadMenu "Scene_Explorer_Quad"
+            # Find and show the native Scene Explorer quad menu using pymxs directly
+            # Try common quad menu names used by Scene Explorer
+            quad_names = ["Scene_Explorer_Quad", "SceneExplorerQuad", "scene_explorer_quad"]
 
-    if nativeQuad != undefined then
-    (
-        popUpContextMenu nativeQuad
-    )
-    else
-    (
-        -- Try alternate names
-        nativeQuad = menuMan.findQuadMenu "SceneExplorerQuad"
-        if nativeQuad != undefined then
-        (
-            popUpContextMenu nativeQuad
-        )
-        else
-        (
-            format "[ESKI] Could not find native Scene Explorer quad menu\\n"
-        )
-    )
-)
-"""
-            rt.execute(show_native_menu)
+            native_quad = None
+            for quad_name in quad_names:
+                try:
+                    native_quad = rt.menuMan.findQuadMenu(quad_name)
+                    if native_quad:
+                        print(f"[ESKI] Found quad menu: {quad_name}")
+                        break
+                except:
+                    continue
+
+            if native_quad:
+                # Show the quad menu
+                rt.popUpContextMenu(native_quad)
+            else:
+                print("[ESKI] Could not find native Scene Explorer quad menu")
+                # List all available quad menus for debugging
+                try:
+                    num_quads = rt.menuMan.numQuadMenus()
+                    print(f"[ESKI] Available quad menus ({num_quads}):")
+                    for i in range(num_quads):
+                        quad = rt.menuMan.getQuadMenu(i + 1)  # 1-indexed
+                        if quad:
+                            print(f"  - {quad.name}")
+                except:
+                    pass
 
         except Exception as e:
             print(f"[ERROR] Failed to show native quad menu: {e}")
