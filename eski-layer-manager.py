@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.18.5
+Version: 0.18.6
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.18.5"
+VERSION = "0.18.6"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -1920,25 +1920,26 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
             # Find and show the native Scene Explorer quad menu
             # The Scene Explorer uses "Scene_Explorer_Quad" for its quad menu
-            show_native_menu = """
--- Find the native Scene Explorer quad menu
-local nativeQuad = menuMan.findQuadMenu "Scene_Explorer_Quad"
+            show_native_menu = """(
+    -- Find the native Scene Explorer quad menu
+    nativeQuad = menuMan.findQuadMenu "Scene_Explorer_Quad"
 
-if nativeQuad != undefined then
-(
-    popUpContextMenu nativeQuad
-)
-else
-(
-    -- Try alternate names
-    nativeQuad = menuMan.findQuadMenu "SceneExplorerQuad"
     if nativeQuad != undefined then
     (
         popUpContextMenu nativeQuad
     )
     else
     (
-        format "[ESKI] Could not find native Scene Explorer quad menu\\n"
+        -- Try alternate names
+        nativeQuad = menuMan.findQuadMenu "SceneExplorerQuad"
+        if nativeQuad != undefined then
+        (
+            popUpContextMenu nativeQuad
+        )
+        else
+        (
+            format "[ESKI] Could not find native Scene Explorer quad menu\\n"
+        )
     )
 )
 """
