@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.15.4
+Version: 0.15.6
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.15.4"
+VERSION = "0.15.6"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -952,6 +952,23 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         top_layout.insertLayout(0, button_layout)
 
+        # Add progress bar (1 pixel tall, green, full width) below buttons
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setFixedHeight(1)  # 1 pixel tall
+        self.progress_bar.setTextVisible(False)  # No text
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)  # Start at 0
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: none;
+                background-color: transparent;
+            }
+            QProgressBar::chunk {
+                background-color: #00ff00;  /* Green */
+            }
+        """)
+        top_layout.insertWidget(1, self.progress_bar)
+
         # Populate layers from 3ds Max
         self.populate_layers()
 
@@ -1355,8 +1372,14 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 if parent_hidden:
                     return
 
+                # Show progress
+                self.progress_bar.setValue(50)
+
                 # Toggle visibility
                 layer.ishidden = not layer.ishidden
+
+                # Update our internal tracking BEFORE updating UI to prevent sync timer from reverting
+                self.last_visibility_states[layer_name] = layer.ishidden
 
                 # Update icon in UserRole+1 (native if available, Unicode fallback otherwise)
                 if self.use_native_icons:
@@ -1368,18 +1391,19 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 # Trigger repaint
                 self.layer_tree.update(self.layer_tree.indexFromItem(item))
 
-                # Force viewport redraw to show/hide objects immediately
-                rt.redrawViews()
+                # If this layer is currently displayed in objects tree, refresh it
+                if hasattr(self, 'current_objects_layer') and self.current_objects_layer == layer_name:
+                    self.populate_objects(layer_name)
 
-                status = "hidden" if layer.ishidden else "visible"
+                # Force complete viewport refresh to show/hide objects immediately
+                rt.execute("redrawViews #all")
+                rt.completeRedraw()
 
-                # If this layer has children, refresh the entire tree to update their icons
-                try:
-                    num_children = layer.getNumChildren()
-                    if num_children > 0:
-                        self.populate_layers()
-                except Exception as e:
-                    pass  # Error checking children
+                # Complete progress
+                self.progress_bar.setValue(100)
+
+                # Reset progress after short delay
+                QtCore.QTimer.singleShot(200, lambda: self.progress_bar.setValue(0))
 
         except Exception as e:
             import traceback
@@ -1442,11 +1466,15 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             if target_layer:
                 object_count = len(selected_objects)
 
+                # Show progress start
+                self.progress_bar.setValue(30)
+
                 # Only use performance optimization for 10+ objects
                 if object_count >= 10:
                     try:
                         # Disable scene redraw for many objects
                         rt.disableSceneRedraw()
+                        self.progress_bar.setValue(50)
 
                         # Batch assign - use MAXScript with quiet mode to suppress listener output
                         rt.execute(f"""
@@ -1457,6 +1485,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         )
                         """)
 
+                        self.progress_bar.setValue(80)
+
                     finally:
                         # Always re-enable scene redraw
                         rt.enableSceneRedraw()
@@ -1464,8 +1494,17 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     # For small number of objects, just do it normally
                     for obj in selected_objects:
                         target_layer.addNode(obj)
+                    self.progress_bar.setValue(80)
+
+                # Complete refresh
+                rt.execute("redrawViews #all")
+                rt.completeRedraw()
 
                 print(f"[OBJECTS] Added {object_count} object(s) to layer '{layer_name}'")
+
+                # Complete progress
+                self.progress_bar.setValue(100)
+                QtCore.QTimer.singleShot(200, lambda: self.progress_bar.setValue(0))
             else:
                 print(f"[ERROR] Layer '{layer_name}' not found")
 
@@ -1838,6 +1877,25 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.sync_timer.start(500)
         pass  # Debug print removed
 
+    def _update_layer_icon_recursive(self, parent_item, layer_name, is_hidden):
+        """Recursively search tree and update icon for matching layer"""
+        for i in range(parent_item.childCount()):
+            item = parent_item.child(i)
+            if item.text(0) == layer_name:  # Single column - layer name in column 0
+                # Update icon in UserRole+1
+                if self.use_native_icons:
+                    item.setData(0, QtCore.Qt.UserRole + 1, self.icon_hidden if is_hidden else self.icon_visible)
+                else:
+                    new_icon_text = "✖" if is_hidden else "👁"
+                    item.setData(0, QtCore.Qt.UserRole + 1, new_icon_text)
+                # Trigger repaint
+                self.layer_tree.update(self.layer_tree.indexFromItem(item))
+                return True
+            # Recursively check children
+            if self._update_layer_icon_recursive(item, layer_name, is_hidden):
+                return True
+        return False
+
     def check_current_layer_sync(self):
         """Check if the current layer or visibility states changed in Max and update UI"""
         if rt is None:
@@ -1870,21 +1928,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
                     # Check if visibility changed for this layer
                     if layer_name not in self.last_visibility_states or self.last_visibility_states[layer_name] != is_hidden:
-                        pass  # Debug print removed
                         self.last_visibility_states[layer_name] = is_hidden
                         visibility_changed = True
 
-                        # Update the icon in the tree
-                        for j in range(self.layer_tree.topLevelItemCount()):
-                            item = self.layer_tree.topLevelItem(j)
-                            if item.text(2) == layer_name:  # Column 2 is layer name
-                                # Update icon
-                                if self.use_native_icons:
-                                    item.setIcon(0, self.icon_hidden if is_hidden else self.icon_visible)
-                                else:
-                                    new_icon_text = "✖" if is_hidden else "👁"
-                                    item.setText(0, new_icon_text)
-                                break
+                        # Update the icon in the tree (single column layout - column 0)
+                        self._update_layer_icon_recursive(self.layer_tree.invisibleRootItem(), layer_name, is_hidden)
 
         except Exception as e:
             # Silently fail - this runs frequently so don't spam errors
