@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.18.7
+Version: 0.19.0
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.18.7"
+VERSION = "0.19.0"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -574,9 +574,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Setup timer to poll for current layer changes (fallback if callback doesn't work)
         self.setup_sync_timer()
-
-        # Setup quad menu for layer context menu
-        self.setup_quad_menu()
 
     def load_visibility_icons(self):
         """Load native 3ds Max visibility icons using Qt resource system"""
@@ -1782,6 +1779,120 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Hide objects panel
             self.bottom_widget.hide()
 
+    def delete_layer(self, layer_name):
+        """Delete a layer by name"""
+        if rt is None:
+            return
+
+        try:
+            layer = self._find_layer_by_name(layer_name)
+            if not layer:
+                print(f"[ERROR] Layer '{layer_name}' not found")
+                return
+
+            # Check if layer has objects
+            node_count = len(layer.nodes) if layer.nodes else 0
+            if node_count > 0:
+                print(f"[ERROR] Cannot delete layer '{layer_name}' - it contains {node_count} object(s)")
+                return
+
+            # Delete the layer
+            rt.layerManager.deleteLayerByName(layer_name)
+            self.populate_layers()
+
+        except Exception as e:
+            print(f"[ERROR] Failed to delete layer: {e}")
+
+    def duplicate_layer(self, layer_name):
+        """Duplicate a layer (create a copy with same properties)"""
+        if rt is None:
+            return
+
+        try:
+            source_layer = self._find_layer_by_name(layer_name)
+            if not source_layer:
+                print(f"[ERROR] Layer '{layer_name}' not found")
+                return
+
+            # Create new layer
+            new_layer = rt.layerManager.newLayer()
+            new_layer.setName(f"{layer_name}_copy")
+
+            # Copy properties
+            new_layer.wireColor = source_layer.wireColor
+            new_layer.ishidden = source_layer.ishidden
+            new_layer.isfrozen = source_layer.isfrozen
+
+            # Set parent if source has parent
+            parent = source_layer.getParent()
+            if parent and parent != rt.undefined:
+                new_layer.setParent(parent)
+
+            self.populate_layers()
+
+        except Exception as e:
+            print(f"[ERROR] Failed to duplicate layer: {e}")
+
+    def select_layer_objects(self, layer_name):
+        """Select all objects in the specified layer"""
+        if rt is None:
+            return
+
+        try:
+            layer = self._find_layer_by_name(layer_name)
+            if not layer:
+                print(f"[ERROR] Layer '{layer_name}' not found")
+                return
+
+            # Select all objects on this layer
+            if layer.nodes:
+                rt.select(layer.nodes)
+            else:
+                print(f"[INFO] Layer '{layer_name}' has no objects")
+
+        except Exception as e:
+            print(f"[ERROR] Failed to select layer objects: {e}")
+
+    def isolate_layer(self, layer_name):
+        """Hide all layers except the specified one"""
+        if rt is None:
+            return
+
+        try:
+            layer_manager = rt.LayerManager
+            layer_count = layer_manager.count
+
+            # Hide all layers except the target
+            for i in range(layer_count):
+                layer = layer_manager.getLayer(i)
+                if layer.name == layer_name:
+                    layer.ishidden = False
+                else:
+                    layer.ishidden = True
+
+            self.populate_layers()
+
+        except Exception as e:
+            print(f"[ERROR] Failed to isolate layer: {e}")
+
+    def toggle_layer_freeze(self, layer_name):
+        """Toggle freeze state of a layer"""
+        if rt is None:
+            return
+
+        try:
+            layer = self._find_layer_by_name(layer_name)
+            if not layer:
+                print(f"[ERROR] Layer '{layer_name}' not found")
+                return
+
+            # Toggle freeze state
+            layer.isfrozen = not layer.isfrozen
+            self.populate_layers()
+
+        except Exception as e:
+            print(f"[ERROR] Failed to toggle layer freeze: {e}")
+
     def toggle_expand_collapse(self, item):
         """Toggle expand/collapse state of a layer with children"""
         # Check if this layer has children
@@ -1897,7 +2008,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.editItem(item, 0)
 
     def on_layer_context_menu(self, position):
-        """Handle right-click context menu on layer - show native Layer Explorer quad menu"""
+        """Handle right-click context menu on layer - show Qt context menu"""
         if rt is None:
             return
 
@@ -1912,44 +2023,62 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         if layer_name.startswith("[TEST MODE]"):
             return
 
-        try:
-            # Set the layer as current so native menu actions work on it
-            layer = rt.LayerManager.getLayerFromName(layer_name)
-            if layer:
-                rt.LayerManager.current = layer
+        # Get layer object
+        layer = rt.LayerManager.getLayerFromName(layer_name)
+        if not layer:
+            return
 
-            # Find and show the native Scene Explorer quad menu using pymxs directly
-            # Try common quad menu names used by Scene Explorer
-            quad_names = ["Scene_Explorer_Quad", "SceneExplorerQuad", "scene_explorer_quad"]
+        # Create Qt context menu
+        menu = QtWidgets.QMenu(self)
 
-            native_quad = None
-            for quad_name in quad_names:
-                try:
-                    native_quad = rt.menuMan.findQuadMenu(quad_name)
-                    if native_quad:
-                        print(f"[ESKI] Found quad menu: {quad_name}")
-                        break
-                except:
-                    continue
+        # Rename action
+        rename_action = menu.addAction("Rename Layer")
+        rename_action.triggered.connect(lambda: self.on_layer_double_clicked(item, 0))
 
-            if native_quad:
-                # Show the quad menu
-                rt.popUpContextMenu(native_quad)
-            else:
-                print("[ESKI] Could not find native Scene Explorer quad menu")
-                # List all available quad menus for debugging
-                try:
-                    num_quads = rt.menuMan.numQuadMenus()
-                    print(f"[ESKI] Available quad menus ({num_quads}):")
-                    for i in range(num_quads):
-                        quad = rt.menuMan.getQuadMenu(i + 1)  # 1-indexed
-                        if quad:
-                            print(f"  - {quad.name}")
-                except:
-                    pass
+        # Delete action
+        delete_action = menu.addAction("Delete Layer")
+        delete_action.triggered.connect(lambda: self.delete_layer(layer_name))
 
-        except Exception as e:
-            print(f"[ERROR] Failed to show native quad menu: {e}")
+        # Duplicate action
+        duplicate_action = menu.addAction("Duplicate Layer")
+        duplicate_action.triggered.connect(lambda: self.duplicate_layer(layer_name))
+
+        menu.addSeparator()
+
+        # New layer action
+        new_layer_action = menu.addAction("New Layer...")
+        new_layer_action.triggered.connect(self.create_new_layer)
+
+        menu.addSeparator()
+
+        # Select objects action
+        select_action = menu.addAction("Select Objects in Layer")
+        select_action.triggered.connect(lambda: self.select_layer_objects(layer_name))
+
+        # Isolate action
+        isolate_action = menu.addAction("Isolate Layer")
+        isolate_action.triggered.connect(lambda: self.isolate_layer(layer_name))
+
+        menu.addSeparator()
+
+        # Toggle visibility action
+        if layer.ishidden:
+            show_action = menu.addAction("Show Layer")
+            show_action.triggered.connect(lambda: self.toggle_layer_visibility(layer_name))
+        else:
+            hide_action = menu.addAction("Hide Layer")
+            hide_action.triggered.connect(lambda: self.toggle_layer_visibility(layer_name))
+
+        # Toggle freeze action
+        if layer.isfrozen:
+            unfreeze_action = menu.addAction("Unfreeze Layer")
+            unfreeze_action.triggered.connect(lambda: self.toggle_layer_freeze(layer_name))
+        else:
+            freeze_action = menu.addAction("Freeze Layer")
+            freeze_action.triggered.connect(lambda: self.toggle_layer_freeze(layer_name))
+
+        # Show menu at cursor position
+        menu.exec_(self.layer_tree.viewport().mapToGlobal(position))
 
     def on_layer_renamed(self, item, column):
         """Handle layer rename after inline editing (single column layout)"""
@@ -2161,34 +2290,6 @@ fn EskiLayerManagerSceneCallback = (
             pass  # Debug print removed
         except Exception as e:
             pass  # Debug print removed
-
-    def setup_quad_menu(self):
-        """Setup to reuse native Layer Explorer quad menu"""
-        if rt is None:
-            return
-
-        try:
-            # Just define the macroScript action for our custom rename function
-            # We'll reuse the native Layer Explorer quad menu instead of creating our own
-            macro_code = """
--- Global variable to store the clicked layer name
-global EskiLayerManager_ContextLayerName = ""
-
--- Action for Rename Layer (available in Customize UI)
-macroScript EskiLayerManager_RenameLayer
-    category:"Eski Layer Manager"
-    buttonText:"Rename Layer"
-    toolTip:"Rename the selected layer"
-(
-    -- Call Python to perform the rename
-    python.Execute ("import eski_layer_manager; eski_layer_manager.rename_layer_from_quad_menu('" + EskiLayerManager_ContextLayerName + "')")
-)
-"""
-            rt.execute(macro_code)
-            print("[ESKI] Macro action registered, will use native Layer Explorer quad menu")
-
-        except Exception as e:
-            print(f"[ERROR] Failed to setup macro: {e}")
 
     def remove_callbacks(self):
         """Remove 3ds Max callbacks"""
@@ -2492,32 +2593,6 @@ def refresh_on_scene_change():
         except (RuntimeError, AttributeError):
             # Widget was deleted
             _layer_manager_instance[0] = None
-
-
-def rename_layer_from_quad_menu(layer_name):
-    """
-    Called from MaxScript quad menu to rename a layer
-    Triggers the inline rename editor for the specified layer
-    """
-    global _layer_manager_instance
-
-    if _layer_manager_instance[0] is not None:
-        try:
-            # Check if widget is still valid
-            _layer_manager_instance[0].isVisible()
-
-            # Find the layer item in the tree
-            item = _layer_manager_instance[0]._find_tree_item_by_name(layer_name)
-            if item:
-                # Trigger the rename by calling the double-click handler
-                _layer_manager_instance[0].on_layer_double_clicked(item, 0)
-            else:
-                print(f"[ERROR] Layer '{layer_name}' not found in tree")
-
-        except (RuntimeError, AttributeError) as e:
-            # Widget was deleted
-            _layer_manager_instance[0] = None
-            print(f"[ERROR] Layer manager instance invalid: {e}")
 
 
 def get_instance_status():
