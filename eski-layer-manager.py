@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.19.0
+Version: 0.19.1
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.19.0"
+VERSION = "0.19.1"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -2030,6 +2030,32 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Create Qt context menu
         menu = QtWidgets.QMenu(self)
+
+        # Disable menu animations for instant response
+        menu.setAttribute(QtCore.Qt.WA_NoSystemBackground, False)
+        menu.setWindowFlags(menu.windowFlags() | QtCore.Qt.FramelessWindowHint | QtCore.Qt.NoDropShadowWindowHint)
+
+        # Set style for instant highlighting (no fade/animation)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2b2b2b;
+                border: 1px solid #555;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 25px 6px 10px;
+                background-color: transparent;
+            }
+            QMenu::item:selected {
+                background-color: #0078d4;
+                color: white;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #555;
+                margin: 4px 0px;
+            }
+        """)
 
         # Rename action
         rename_action = menu.addAction("Rename Layer")
