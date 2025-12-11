@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.19.2
+Version: 0.19.3
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.19.2"
+VERSION = "0.19.3"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -57,7 +57,7 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
         self.plus_icon_size = 14  # Match main icon size for consistency
         self.plus_icon_spacing = 3  # Compact spacing
 
-    def _get_visual_row_number(self, index):
+    def _get_visual_row_number(self, index, tree_widget):
         """Calculate the visual row number by counting all visible rows from top"""
         count = 0
 
@@ -70,7 +70,7 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
                 count += 1
                 sibling = idx.sibling(row, 0)
                 # If sibling is expanded, count its children too
-                if self.layer_manager.layer_tree.isExpanded(sibling):
+                if tree_widget.isExpanded(sibling):
                     count_children(sibling)
 
             # Recursively count parent's position
@@ -85,7 +85,7 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
             for row in range(row_count):
                 count += 1
                 child_idx = model.index(row, 0, parent_idx)
-                if self.layer_manager.layer_tree.isExpanded(child_idx):
+                if tree_widget.isExpanded(child_idx):
                     count_children(child_idx)
 
         count_rows_before(index)
@@ -95,20 +95,26 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
         """Custom paint method for rendering inline icons"""
         painter.save()
 
+        # Determine which tree widget this index belongs to
+        item = self.layer_manager.layer_tree.itemFromIndex(index)
+        if item:
+            tree_widget = self.layer_manager.layer_tree
+        else:
+            item = self.layer_manager.objects_tree.itemFromIndex(index)
+            tree_widget = self.layer_manager.objects_tree
+
+        if not item:
+            painter.restore()
+            return
+
         # Calculate visual row number (counting all visible rows from top)
-        visual_row = self._get_visual_row_number(index)
+        visual_row = self._get_visual_row_number(index, tree_widget)
 
         # Draw background (alternating rows) - NO full row selection highlight
         if visual_row % 2:
             painter.fillRect(option.rect, option.palette.alternateBase())
         else:
             painter.fillRect(option.rect, option.palette.base())
-
-        # Get item data
-        item = self.layer_manager.layer_tree.itemFromIndex(index)
-        if not item:
-            painter.restore()
-            return
 
         # Starting X position - use the visual rect which accounts for indentation
         # option.rect gives us the item's visual rect in viewport coordinates
