@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.19.1
+Version: 0.19.2
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.19.1"
+VERSION = "0.19.2"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -2008,25 +2008,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.editItem(item, 0)
 
     def on_layer_context_menu(self, position):
-        """Handle right-click context menu on layer - show Qt context menu"""
+        """Handle right-click context menu - show Qt context menu"""
         if rt is None:
             return
 
         item = self.layer_tree.itemAt(position)
-        if item is None:
-            return
-
-        # Get layer name
-        layer_name = item.text(0)
-
-        # Don't show menu for test mode items
-        if layer_name.startswith("[TEST MODE]"):
-            return
-
-        # Get layer object
-        layer = rt.LayerManager.getLayerFromName(layer_name)
-        if not layer:
-            return
 
         # Create Qt context menu
         menu = QtWidgets.QMenu(self)
@@ -2057,51 +2043,69 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             }
         """)
 
-        # Rename action
-        rename_action = menu.addAction("Rename Layer")
-        rename_action.triggered.connect(lambda: self.on_layer_double_clicked(item, 0))
-
-        # Delete action
-        delete_action = menu.addAction("Delete Layer")
-        delete_action.triggered.connect(lambda: self.delete_layer(layer_name))
-
-        # Duplicate action
-        duplicate_action = menu.addAction("Duplicate Layer")
-        duplicate_action.triggered.connect(lambda: self.duplicate_layer(layer_name))
-
-        menu.addSeparator()
-
-        # New layer action
-        new_layer_action = menu.addAction("New Layer...")
-        new_layer_action.triggered.connect(self.create_new_layer)
-
-        menu.addSeparator()
-
-        # Select objects action
-        select_action = menu.addAction("Select Objects in Layer")
-        select_action.triggered.connect(lambda: self.select_layer_objects(layer_name))
-
-        # Isolate action
-        isolate_action = menu.addAction("Isolate Layer")
-        isolate_action.triggered.connect(lambda: self.isolate_layer(layer_name))
-
-        menu.addSeparator()
-
-        # Toggle visibility action
-        if layer.ishidden:
-            show_action = menu.addAction("Show Layer")
-            show_action.triggered.connect(lambda: self.toggle_layer_visibility(layer_name))
+        # Check if clicked on empty area or on a layer
+        if item is None:
+            # Empty area - show simple menu
+            new_layer_action = menu.addAction("New Layer...")
+            new_layer_action.triggered.connect(self.create_new_layer)
         else:
-            hide_action = menu.addAction("Hide Layer")
-            hide_action.triggered.connect(lambda: self.toggle_layer_visibility(layer_name))
+            # Clicked on a layer - show full layer menu
+            layer_name = item.text(0)
 
-        # Toggle freeze action
-        if layer.isfrozen:
-            unfreeze_action = menu.addAction("Unfreeze Layer")
-            unfreeze_action.triggered.connect(lambda: self.toggle_layer_freeze(layer_name))
-        else:
-            freeze_action = menu.addAction("Freeze Layer")
-            freeze_action.triggered.connect(lambda: self.toggle_layer_freeze(layer_name))
+            # Don't show menu for test mode items
+            if layer_name.startswith("[TEST MODE]"):
+                return
+
+            # Get layer object
+            layer = rt.LayerManager.getLayerFromName(layer_name)
+            if not layer:
+                return
+
+            # Rename action
+            rename_action = menu.addAction("Rename Layer")
+            rename_action.triggered.connect(lambda: self.on_layer_double_clicked(item, 0))
+
+            # Delete action
+            delete_action = menu.addAction("Delete Layer")
+            delete_action.triggered.connect(lambda: self.delete_layer(layer_name))
+
+            # Duplicate action
+            duplicate_action = menu.addAction("Duplicate Layer")
+            duplicate_action.triggered.connect(lambda: self.duplicate_layer(layer_name))
+
+            menu.addSeparator()
+
+            # New layer action
+            new_layer_action = menu.addAction("New Layer...")
+            new_layer_action.triggered.connect(self.create_new_layer)
+
+            menu.addSeparator()
+
+            # Select objects action
+            select_action = menu.addAction("Select Objects in Layer")
+            select_action.triggered.connect(lambda: self.select_layer_objects(layer_name))
+
+            # Isolate action
+            isolate_action = menu.addAction("Isolate Layer")
+            isolate_action.triggered.connect(lambda: self.isolate_layer(layer_name))
+
+            menu.addSeparator()
+
+            # Toggle visibility action
+            if layer.ishidden:
+                show_action = menu.addAction("Show Layer")
+                show_action.triggered.connect(lambda: self.toggle_layer_visibility(layer_name))
+            else:
+                hide_action = menu.addAction("Hide Layer")
+                hide_action.triggered.connect(lambda: self.toggle_layer_visibility(layer_name))
+
+            # Toggle freeze action
+            if layer.isfrozen:
+                unfreeze_action = menu.addAction("Unfreeze Layer")
+                unfreeze_action.triggered.connect(lambda: self.toggle_layer_freeze(layer_name))
+            else:
+                freeze_action = menu.addAction("Freeze Layer")
+                freeze_action.triggered.connect(lambda: self.toggle_layer_freeze(layer_name))
 
         # Show menu at cursor position
         menu.exec_(self.layer_tree.viewport().mapToGlobal(position))
