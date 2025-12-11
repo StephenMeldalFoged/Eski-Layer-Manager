@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.18.4
+Version: 0.18.5
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.18.4"
+VERSION = "0.18.5"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -1897,7 +1897,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.editItem(item, 0)
 
     def on_layer_context_menu(self, position):
-        """Handle right-click context menu on layer - show MaxScript quad menu"""
+        """Handle right-click context menu on layer - show native Layer Explorer quad menu"""
         if rt is None:
             return
 
@@ -1913,32 +1913,39 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         try:
-            # Set the global layer name variable in MaxScript
-            rt.execute(f'global EskiLayerManager_ContextLayerName = "{layer_name}"')
+            # Set the layer as current so native menu actions work on it
+            layer = rt.LayerManager.getLayerFromName(layer_name)
+            if layer:
+                rt.LayerManager.current = layer
 
-            # Ensure the quad menu exists before showing it
-            check_and_show = """
-if EskiLayerManagerQuadMenu == undefined then
+            # Find and show the native Scene Explorer quad menu
+            # The Scene Explorer uses "Scene_Explorer_Quad" for its quad menu
+            show_native_menu = """
+-- Find the native Scene Explorer quad menu
+local nativeQuad = menuMan.findQuadMenu "Scene_Explorer_Quad"
+
+if nativeQuad != undefined then
 (
-    format "[ESKI] Quad menu not found, attempting to recreate...\\n"
-    -- Try to find it first
-    global EskiLayerManagerQuadMenu = menuMan.findQuadMenu "EskiLayerManagerQuad"
-
-    if EskiLayerManagerQuadMenu == undefined then
+    popUpContextMenu nativeQuad
+)
+else
+(
+    -- Try alternate names
+    nativeQuad = menuMan.findQuadMenu "SceneExplorerQuad"
+    if nativeQuad != undefined then
     (
-        format "[ESKI] ERROR: Quad menu could not be found. Please restart the Layer Manager.\\n"
+        popUpContextMenu nativeQuad
+    )
+    else
+    (
+        format "[ESKI] Could not find native Scene Explorer quad menu\\n"
     )
 )
-
-if EskiLayerManagerQuadMenu != undefined then
-(
-    popUpContextMenu EskiLayerManagerQuadMenu
-)
 """
-            rt.execute(check_and_show)
+            rt.execute(show_native_menu)
 
         except Exception as e:
-            print(f"[ERROR] Failed to show quad menu: {e}")
+            print(f"[ERROR] Failed to show native quad menu: {e}")
 
     def on_layer_renamed(self, item, column):
         """Handle layer rename after inline editing (single column layout)"""
@@ -2152,17 +2159,18 @@ fn EskiLayerManagerSceneCallback = (
             pass  # Debug print removed
 
     def setup_quad_menu(self):
-        """Setup MaxScript quad menu for layer context menu (editable in Max menu editor)"""
+        """Setup to reuse native Layer Explorer quad menu"""
         if rt is None:
             return
 
         try:
-            # First, define the macroScript action and load it
+            # Just define the macroScript action for our custom rename function
+            # We'll reuse the native Layer Explorer quad menu instead of creating our own
             macro_code = """
 -- Global variable to store the clicked layer name
 global EskiLayerManager_ContextLayerName = ""
 
--- Action for Rename Layer
+-- Action for Rename Layer (available in Customize UI)
 macroScript EskiLayerManager_RenameLayer
     category:"Eski Layer Manager"
     buttonText:"Rename Layer"
@@ -2171,60 +2179,12 @@ macroScript EskiLayerManager_RenameLayer
     -- Call Python to perform the rename
     python.Execute ("import eski_layer_manager; eski_layer_manager.rename_layer_from_quad_menu('" + EskiLayerManager_ContextLayerName + "')")
 )
-
--- IMPORTANT: Load the macro into the action manager
-macros.load()
 """
             rt.execute(macro_code)
-
-            # Store the quad menu at module level for persistence
-            quad_setup_code = """
--- Create or retrieve the quad menu
-global EskiLayerManagerQuadMenu = undefined
-
-if EskiLayerManagerQuadMenu == undefined then
-(
-    -- Check if it already exists in menuMan
-    EskiLayerManagerQuadMenu = menuMan.findQuadMenu "EskiLayerManagerQuad"
-
-    if EskiLayerManagerQuadMenu == undefined then
-    (
-        -- Create new quad menu
-        EskiLayerManagerQuadMenu = menuMan.createQuadMenu "EskiLayerManagerQuad" "Eski Layer Manager"
-
-        -- Create menu for actions
-        local eskiMenu = menuMan.createMenu "Eski Layer Actions"
-
-        -- Create action item for rename
-        local renameAction = menuMan.createActionItem "EskiLayerManager_RenameLayer" "Eski Layer Manager"
-
-        if renameAction != undefined then
-        (
-            eskiMenu.addItem renameAction -1
-
-            -- Add menu to quad (position 1 = upper-left quadrant)
-            EskiLayerManagerQuadMenu.addMenu eskiMenu 1
-
-            -- Register the quad menu
-            menuMan.registerQuadMenu EskiLayerManagerQuadMenu
-
-            format "[ESKI] Quad menu created and registered\\n"
-        )
-        else
-        (
-            format "[ESKI] ERROR: Could not create action item\\n"
-        )
-    )
-    else
-    (
-        format "[ESKI] Quad menu found existing\\n"
-    )
-)
-"""
-            rt.execute(quad_setup_code)
+            print("[ESKI] Macro action registered, will use native Layer Explorer quad menu")
 
         except Exception as e:
-            print(f"[ERROR] Failed to setup quad menu: {e}")
+            print(f"[ERROR] Failed to setup macro: {e}")
 
     def remove_callbacks(self):
         """Remove 3ds Max callbacks"""
