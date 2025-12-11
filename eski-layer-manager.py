@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.15.0
+Version: 0.15.4
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.15.0"
+VERSION = "0.15.4"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -286,24 +286,20 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
 
     def dropEvent(self, event):
         """Handle drop event to reparent layers, reassign objects, or accept external drops from Scene Explorer"""
-        print(f"[DROP] dropEvent triggered")
 
         # Check if this is a drag from the objects tree
         source_widget = event.source()
 
         # Handle external drops (from Scene Explorer or other Qt widgets outside our app)
         if source_widget is None or (source_widget != self and source_widget != getattr(self.layer_manager, 'objects_tree', None)):
-            print(f"[DROP] External drop detected (source: {source_widget})")
 
             # Get target layer
             target_item = self.itemAt(event.pos())
             if not target_item:
-                print(f"[DROP] No target layer found")
                 event.ignore()
                 return
 
             target_layer_name = target_item.text(0)
-            print(f"[DROP] Target layer: {target_layer_name}")
 
             # Try to get the currently selected objects in 3ds Max
             # When user drags from Scene Explorer, those objects should be selected
@@ -311,14 +307,12 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
                 try:
                     selection = rt.selection
                     if len(selection) > 0:
-                        print(f"[DROP] Found {len(selection)} selected objects in Max")
                         object_names = [str(obj.name) for obj in selection]
-                        print(f"[DROP] Assigning objects to layer: {object_names}")
                         self.layer_manager.reassign_objects_to_layer(object_names, target_layer_name)
                         event.accept()
                         return
                     else:
-                        print(f"[DROP] No objects selected in Max")
+                        pass  # No objects selected
                 except Exception as e:
                     print(f"[DROP ERROR] Failed to get selection: {e}")
 
@@ -999,7 +993,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Get the layer manager from 3ds Max
             layer_manager = rt.layerManager
             layer_count = layer_manager.count
-            print(f"[HIERARCHY] Found {layer_count} total layers")
 
             # Collect all layers first
             all_layers = []
@@ -1007,7 +1000,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 layer = layer_manager.getLayer(i)
                 if layer:
                     all_layers.append(layer)
-                    print(f"[HIERARCHY] Layer {i}: {layer.name}")
 
             # Separate into root layers and child layers
             root_layers = []
@@ -1017,13 +1009,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     # Check if parent is undefined/None (root layer)
                     if parent is None or str(parent) == "undefined":
                         root_layers.append(layer)
-                        print(f"[HIERARCHY] {layer.name} is a ROOT layer")
                     else:
-                        print(f"[HIERARCHY] {layer.name} has parent: {parent.name}")
+                        pass  # Has parent, will be added as child later
                 except:
                     # If getParent fails, assume it's a root layer
                     root_layers.append(layer)
-                    print(f"[HIERARCHY] {layer.name} is a ROOT layer (getParent failed)")
 
             # Sort root layers alphabetically
             root_layers.sort(key=lambda x: str(x.name).lower())
@@ -1052,7 +1042,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 num_children = layer.getNumChildren()
                 has_children = num_children > 0
                 if has_children:
-                    print(f"[HIERARCHY] {layer_name} has {num_children} children")
+                    pass  # Children will be added recursively
             except:
                 has_children = False
 
@@ -1294,56 +1284,45 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
             # Get click position in viewport coordinates
             cursor_pos = self.layer_tree.viewport().mapFromGlobal(QtGui.QCursor.pos())
-            print(f"[CLICK DEBUG] Layer: {layer_name}, Cursor pos: {cursor_pos.x()}, {cursor_pos.y()}")
 
             # Get the visual rect for this item to get current Y position (accounting for scroll)
             index = self.layer_tree.indexFromItem(item)
             visual_rect = self.layer_tree.visualRect(index)
-            print(f"[CLICK DEBUG] Visual rect: {visual_rect.x()}, {visual_rect.y()}, {visual_rect.width()}, {visual_rect.height()}")
 
             # Check if item has click regions (set by delegate during last paint)
             if hasattr(item, 'click_regions') and hasattr(item, 'current_item_y'):
-                print(f"[CLICK DEBUG] Has click_regions: {list(item.click_regions.keys())}")
                 # Adjust click regions to current visual position (in case of scrolling)
                 # The stored regions use the Y from paint time, we need current Y
                 y_offset = visual_rect.y() - item.current_item_y
-                print(f"[CLICK DEBUG] Y offset: {y_offset}, stored Y: {item.current_item_y}, current Y: {visual_rect.y()}")
 
                 # Check which region was clicked
                 # (Skip arrow - Qt's built-in tree arrows handle expand/collapse)
                 if 'visibility' in item.click_regions:
                     vis_rect = item.click_regions['visibility'].translated(0, y_offset)
-                    print(f"[CLICK DEBUG] Vis rect: {vis_rect.x()}, {vis_rect.y()}, {vis_rect.width()}, {vis_rect.height()}")
                     if vis_rect.contains(cursor_pos):
-                        print(f"[CLICK DEBUG] CLICKED VISIBILITY!")
                         # Toggle visibility only - do NOT select row or activate layer
                         self.toggle_layer_visibility(item, layer_name)
                         return
 
                 if 'add_selection' in item.click_regions:
                     add_rect = item.click_regions['add_selection'].translated(0, y_offset)
-                    print(f"[CLICK DEBUG] Add rect: {add_rect.x()}, {add_rect.y()}, {add_rect.width()}, {add_rect.height()}")
                     if add_rect.contains(cursor_pos):
-                        print(f"[CLICK DEBUG] CLICKED ADD SELECTION!")
                         # Add selected objects to this layer
                         self.add_selection_to_layer(layer_name)
                         return
 
                 if 'name' in item.click_regions:
                     name_rect = item.click_regions['name'].translated(0, y_offset)
-                    print(f"[CLICK DEBUG] Name rect: {name_rect.x()}, {name_rect.y()}, {name_rect.width()}, {name_rect.height()}")
                     if name_rect.contains(cursor_pos):
-                        print(f"[CLICK DEBUG] CLICKED NAME!")
                         # Set as current layer (selection already handled by CustomTreeWidget)
                         self.set_current_layer(layer_name)
                         # Populate objects tree with objects from this layer
                         self.populate_objects(layer_name)
                         return
             else:
-                print(f"[CLICK DEBUG] No click_regions found!")
+                pass  # No click_regions found
 
             # Fallback - if no regions matched, treat as name click
-            print(f"[CLICK DEBUG] Fallback to name click")
             self.set_current_layer(layer_name)
 
         except Exception as e:
@@ -1367,21 +1346,17 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     parent_layer = layer.getParent()
                     if parent_layer and str(parent_layer) != "undefined":
                         parent_hidden = parent_layer.ishidden
-                        print(f"[DEBUG] Layer '{layer_name}' parent '{parent_layer.name}' is hidden: {parent_hidden}")
                     else:
-                        print(f"[DEBUG] Layer '{layer_name}' has no parent")
+                        parent_hidden = False  # No parent
                 except Exception as e:
-                    print(f"[DEBUG] Error checking parent for '{layer_name}': {e}")
+                    parent_hidden = False  # Error checking parent
 
                 # If parent is hidden, don't allow toggling (child follows parent)
                 if parent_hidden:
-                    print(f"[DEBUG] Blocking toggle for '{layer_name}' - parent is hidden")
                     return
 
                 # Toggle visibility
-                print(f"[VISIBILITY] Toggling '{layer_name}' from ishidden={layer.ishidden} to ishidden={not layer.ishidden}")
                 layer.ishidden = not layer.ishidden
-                print(f"[VISIBILITY] After toggle: '{layer_name}' ishidden={layer.ishidden}")
 
                 # Update icon in UserRole+1 (native if available, Unicode fallback otherwise)
                 if self.use_native_icons:
@@ -1397,16 +1372,14 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 rt.redrawViews()
 
                 status = "hidden" if layer.ishidden else "visible"
-                print(f"[VISIBILITY] Layer '{layer_name}' is now {status}")
 
                 # If this layer has children, refresh the entire tree to update their icons
                 try:
                     num_children = layer.getNumChildren()
                     if num_children > 0:
-                        print(f"[VISIBILITY] Layer '{layer_name}' has {num_children} children, refreshing tree...")
                         self.populate_layers()
                 except Exception as e:
-                    print(f"[VISIBILITY] Error checking children: {e}")
+                    pass  # Error checking children
 
         except Exception as e:
             import traceback
@@ -1461,20 +1434,38 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             selected_objects = rt.selection
 
             if len(selected_objects) == 0:
-                pass  # Debug print removed
                 return
 
             # Find the target layer (search recursively for nested layers)
             target_layer = self._find_layer_by_name(layer_name)
 
             if target_layer:
-                # Assign all selected objects to this layer
-                object_count = 0
-                for obj in selected_objects:
-                    target_layer.addNode(obj)
-                    object_count += 1
+                object_count = len(selected_objects)
 
-                pass  # Debug print removed
+                # Only use performance optimization for 10+ objects
+                if object_count >= 10:
+                    try:
+                        # Disable scene redraw for many objects
+                        rt.disableSceneRedraw()
+
+                        # Batch assign - use MAXScript with quiet mode to suppress listener output
+                        rt.execute(f"""
+                        with quiet on
+                        (
+                            local targetLayer = layerManager.getLayerFromName "{layer_name}"
+                            for obj in selection do targetLayer.addNode obj
+                        )
+                        """)
+
+                    finally:
+                        # Always re-enable scene redraw
+                        rt.enableSceneRedraw()
+                else:
+                    # For small number of objects, just do it normally
+                    for obj in selected_objects:
+                        target_layer.addNode(obj)
+
+                print(f"[OBJECTS] Added {object_count} object(s) to layer '{layer_name}'")
             else:
                 print(f"[ERROR] Layer '{layer_name}' not found")
 
@@ -1482,6 +1473,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             import traceback
             error_msg = f"Error adding selection to layer: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
+            # Make sure to re-enable scene redraw if we crashed mid-operation
+            try:
+                rt.enableSceneRedraw()
+            except:
+                pass
 
     def reassign_objects_to_layer(self, object_names, target_layer_name):
         """Reassign objects (by name) to a different layer"""
@@ -1495,21 +1491,49 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 print(f"[ERROR] Target layer '{target_layer_name}' not found")
                 return
 
-            # Find and reassign each object
-            success_count = 0
-            for obj_name in object_names:
+            # Only use performance optimization for 10+ objects
+            if len(object_names) >= 10:
                 try:
-                    # Get object by name from 3ds Max
-                    obj = rt.getNodeByName(obj_name)
-                    if obj:
-                        # Assign to new layer
-                        target_layer.addNode(obj)
-                        success_count += 1
-                    else:
-                        print(f"[ERROR] Object '{obj_name}' not found")
-                except Exception as e:
-                    print(f"[ERROR] Failed to reassign object '{obj_name}': {e}")
+                    # Disable scene redraw for performance with many objects
+                    rt.disableSceneRedraw()
 
+                    # Find and reassign each object
+                    success_count = 0
+                    failed_objects = []
+                    for obj_name in object_names:
+                        try:
+                            # Get object by name from 3ds Max
+                            obj = rt.getNodeByName(obj_name)
+                            if obj:
+                                # Assign to new layer
+                                target_layer.addNode(obj)
+                                success_count += 1
+                            else:
+                                failed_objects.append(obj_name)
+                        except Exception as e:
+                            failed_objects.append(obj_name)
+
+                finally:
+                    # Always re-enable scene redraw
+                    rt.enableSceneRedraw()
+            else:
+                # For small number of objects, just do it normally
+                success_count = 0
+                failed_objects = []
+                for obj_name in object_names:
+                    try:
+                        # Get object by name from 3ds Max
+                        obj = rt.getNodeByName(obj_name)
+                        if obj:
+                            # Assign to new layer
+                            target_layer.addNode(obj)
+                            success_count += 1
+                        else:
+                            failed_objects.append(obj_name)
+                    except Exception as e:
+                        failed_objects.append(obj_name)
+
+            # Single summary message instead of per-object logging
             print(f"[OBJECTS] Reassigned {success_count}/{len(object_names)} objects to layer '{target_layer_name}'")
 
             # Refresh the objects tree to show updated list
@@ -1611,11 +1635,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         if is_checked:
             # Show objects panel
             self.bottom_widget.show()
-            print(f"[DEBUG] Objects panel shown")
         else:
             # Hide objects panel
             self.bottom_widget.hide()
-            print(f"[DEBUG] Objects panel hidden")
 
     def toggle_expand_collapse(self, item):
         """Toggle expand/collapse state of a layer with children"""
