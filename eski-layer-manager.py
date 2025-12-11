@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.18.3
+Version: 0.18.4
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.18.3"
+VERSION = "0.18.4"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -1916,8 +1916,26 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Set the global layer name variable in MaxScript
             rt.execute(f'global EskiLayerManager_ContextLayerName = "{layer_name}"')
 
-            # Show the quad menu using the global variable
-            rt.execute('popUpContextMenu EskiLayerManagerQuadMenu')
+            # Ensure the quad menu exists before showing it
+            check_and_show = """
+if EskiLayerManagerQuadMenu == undefined then
+(
+    format "[ESKI] Quad menu not found, attempting to recreate...\\n"
+    -- Try to find it first
+    global EskiLayerManagerQuadMenu = menuMan.findQuadMenu "EskiLayerManagerQuad"
+
+    if EskiLayerManagerQuadMenu == undefined then
+    (
+        format "[ESKI] ERROR: Quad menu could not be found. Please restart the Layer Manager.\\n"
+    )
+)
+
+if EskiLayerManagerQuadMenu != undefined then
+(
+    popUpContextMenu EskiLayerManagerQuadMenu
+)
+"""
+            rt.execute(check_and_show)
 
         except Exception as e:
             print(f"[ERROR] Failed to show quad menu: {e}")
@@ -2139,7 +2157,7 @@ fn EskiLayerManagerSceneCallback = (
             return
 
         try:
-            # First, define the macroScript action
+            # First, define the macroScript action and load it
             macro_code = """
 -- Global variable to store the clicked layer name
 global EskiLayerManager_ContextLayerName = ""
@@ -2153,6 +2171,9 @@ macroScript EskiLayerManager_RenameLayer
     -- Call Python to perform the rename
     python.Execute ("import eski_layer_manager; eski_layer_manager.rename_layer_from_quad_menu('" + EskiLayerManager_ContextLayerName + "')")
 )
+
+-- IMPORTANT: Load the macro into the action manager
+macros.load()
 """
             rt.execute(macro_code)
 
