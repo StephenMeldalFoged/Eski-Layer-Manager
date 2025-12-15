@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.20.5
+Version: 0.20.6
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.20.5"
+VERSION = "0.20.6"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -650,7 +650,27 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             "Tip: Use the Objects toggle button to show/hide the objects panel",
             "Tip: Ctrl+Click an isolated layer's eye icon again to restore visibility",
             "Tip: Drag from 3ds Max Scene Explorer directly into layers",
-            "Tip: Click a layer name to make it the active layer in 3ds Max"
+            "Tip: Click a layer name to make it the active layer in 3ds Max",
+            "Tip: Use the + button at the top to create a new layer",
+            "Tip: Select a layer and click the delete button to remove it",
+            "Tip: Click the refresh button to reload layers from 3ds Max",
+            "Tip: Right-click empty space in the layer tree to create a new root layer",
+            "Tip: Ctrl+Click objects in the Objects panel for multi-selection",
+            "Tip: Click an object in the Objects panel to select it in the viewport",
+            "Tip: Drag the window to the left or right edge to dock it",
+            "Tip: Window position is saved per scene file automatically",
+            "Tip: The green progress bar shows when operations are running",
+            "Tip: Hidden parent layers make child layers inherit the hidden state",
+            "Tip: Drag a layer above/below another to make them siblings",
+            "Tip: Drag a layer to empty space to move it to the root level",
+            "Tip: Click the arrow next to a layer to expand/collapse children",
+            "Tip: The active layer name is highlighted in teal color",
+            "Tip: Layers highlight in bright teal when dragging objects over them",
+            "Tip: Click the status bar to skip to the next tip instantly",
+            "Tip: Hover over the status bar to pause tip rotation and read",
+            "Tip: Alternating row colors help distinguish between layers",
+            "Tip: Use parent-child relationships to organize complex scenes",
+            "Tip: Right-click the status bar to view all tips at once"
         ]
         self.current_tip_index = 0
         self.tip_timer = QtCore.QTimer(self)
@@ -956,6 +976,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.status_label.mousePressEvent = self.on_status_clicked
         self.status_label.enterEvent = self.on_status_hover_enter
         self.status_label.leaveEvent = self.on_status_hover_leave
+        self.status_label.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.status_label.customContextMenuRequested.connect(self.show_all_tips_window)
         main_layout.addWidget(self.status_label)
 
         # Set minimum size
@@ -2333,6 +2355,59 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         """Handle mouse leaving status bar - restart timer from 0"""
         if hasattr(self, 'tip_timer'):
             self.tip_timer.start(12000)  # Reset and restart timer
+
+    def show_all_tips_window(self):
+        """Show a window with all tips when right-clicking status bar"""
+        if not hasattr(self, 'tips'):
+            return
+
+        # Create dialog window
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Eski Layer Manager - All Tips & Tricks")
+        dialog.setMinimumWidth(600)
+        dialog.setMinimumHeight(500)
+
+        # Create layout
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        # Add header label
+        header = QtWidgets.QLabel(f"All Tips & Tricks ({len(self.tips)} total)")
+        header.setStyleSheet("font-weight: bold; font-size: 12px; padding: 5px;")
+        layout.addWidget(header)
+
+        # Create text browser for tips
+        text_browser = QtWidgets.QTextBrowser()
+        text_browser.setOpenExternalLinks(False)
+        text_browser.setStyleSheet("""
+            QTextBrowser {
+                background-color: #2a2a2a;
+                color: #cccccc;
+                border: 1px solid #3a3a3a;
+                padding: 10px;
+                font-size: 11px;
+                line-height: 1.6;
+            }
+        """)
+
+        # Format all tips as HTML with numbering
+        tips_html = "<html><body>"
+        for i, tip in enumerate(self.tips, 1):
+            # Remove "Tip: " prefix for cleaner display
+            tip_text = tip.replace("Tip: ", "")
+            tips_html += f"<p><b>{i}.</b> {tip_text}</p>"
+        tips_html += "</body></html>"
+
+        text_browser.setHtml(tips_html)
+        layout.addWidget(text_browser)
+
+        # Add close button
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(dialog.close)
+        close_btn.setFixedHeight(32)
+        layout.addWidget(close_btn)
+
+        # Show the dialog (non-modal so user can still interact with main window)
+        dialog.show()
 
     def _update_layer_icon_recursive(self, parent_item, layer_name, is_hidden):
         """Recursively search tree and update icon for matching layer"""
