@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.20.0
+Version: 0.20.1
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.20.0"
+VERSION = "0.20.1"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -1269,7 +1269,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Find the layer
             layer = self._find_layer_by_name(layer_name)
             if not layer:
-                print(f"[OBJECTS] Layer '{layer_name}' not found")
                 self.progress_bar.setValue(0)
                 return
 
@@ -1286,8 +1285,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         layer_objects.append(node)
                 except:
                     pass
-
-            print(f"[OBJECTS] Found {len(layer_objects)} objects in layer '{layer_name}'")
 
             self.progress_bar.setValue(70)
 
@@ -1392,7 +1389,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Set the selection in 3ds Max
             if len(selection_array) > 0:
                 rt.select(selection_array)
-                print(f"[OBJECTS] Selected {len(selection_array)} object(s) in scene")
 
         except Exception as e:
             print(f"[ERROR] on_object_selection_changed failed: {e}")
@@ -1659,8 +1655,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 rt.execute("redrawViews #all")
                 rt.completeRedraw()
 
-                print(f"[OBJECTS] Added {object_count} object(s) to layer '{layer_name}'")
-
                 # Complete progress
                 self.progress_bar.setValue(100)
                 QtCore.QTimer.singleShot(200, lambda: self.progress_bar.setValue(0))
@@ -1730,9 +1724,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                             failed_objects.append(obj_name)
                     except Exception as e:
                         failed_objects.append(obj_name)
-
-            # Single summary message instead of per-object logging
-            print(f"[OBJECTS] Reassigned {success_count}/{len(object_names)} objects to layer '{target_layer_name}'")
 
             # Refresh the objects tree to show updated list
             # Refresh the currently displayed layer (where objects were dragged from)
@@ -1931,8 +1922,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Select all objects on this layer
             if layer.nodes:
                 rt.select(layer.nodes)
-            else:
-                print(f"[INFO] Layer '{layer_name}' has no objects")
 
         except Exception as e:
             print(f"[ERROR] Failed to select layer objects: {e}")
@@ -2541,10 +2530,8 @@ fn EskiLayerManagerSceneCallback = (
                 if rel_pos:
                     if rel_pos['above']:
                         relative_above = rel_pos['above']
-                        print(f"[POSITION] We are below: {relative_above}")
                     if rel_pos['below']:
                         relative_below = rel_pos['below']
-                        print(f"[POSITION] We are above: {relative_below}")
 
             # Format: floating;dock_area;x;y;width;height;relative_above;relative_below
             position_data = f"{is_floating};{dock_area};{pos.x()};{pos.y()};{size.width()};{size.height()};{relative_above};{relative_below}"
@@ -2561,7 +2548,6 @@ fn EskiLayerManagerSceneCallback = (
             # Add new property - addProperty signature: (#custom, name, value)
             rt.fileProperties.addProperty(rt.Name("custom"), "EskiLayerManagerPosition", position_data)
 
-            print(f"[POSITION] Saved to .max file: floating={is_floating}, dock={dock_area}, pos=({pos.x()},{pos.y()}), size=({size.width()},{size.height()})")
         except Exception as e:
             print(f"[ERROR] save_position failed: {e}")
             import traceback
@@ -2583,7 +2569,6 @@ fn EskiLayerManagerSceneCallback = (
 
             # If findProperty returns 0, property doesn't exist
             if not prop_index or prop_index == 0:
-                print("[POSITION] No saved position found in .max file")
                 return None
 
             # Get the actual property value using the index
@@ -2608,7 +2593,6 @@ fn EskiLayerManagerSceneCallback = (
                     'relative_above': parts[6] if parts[6] != "none" else None,
                     'relative_below': parts[7] if parts[7] != "none" else None
                 }
-                print(f"[POSITION] Loaded: floating={result['floating']}, dock={result['dock_area']}, above={result['relative_above']}, below={result['relative_below']}")
                 return result
             elif len(parts) == 6:
                 # Old format: floating;dock_area;x;y;width;height
@@ -2622,7 +2606,6 @@ fn EskiLayerManagerSceneCallback = (
                     'relative_above': None,
                     'relative_below': None
                 }
-                print(f"[POSITION] Loaded (old format): floating={result['floating']}, dock={result['dock_area']}")
                 return result
             elif len(parts) == 5:
                 # Very old format: floating;x;y;width;height (no dock_area)
@@ -2636,10 +2619,8 @@ fn EskiLayerManagerSceneCallback = (
                     'relative_above': None,
                     'relative_below': None
                 }
-                print(f"[POSITION] Loaded (very old format): floating={result['floating']}")
                 return result
             else:
-                print(f"[POSITION] Invalid format in .max file: {position_data}")
                 return None
 
         except Exception as e:
@@ -2650,17 +2631,13 @@ fn EskiLayerManagerSceneCallback = (
 
     def closeEvent(self, event):
         """Handle close event"""
-        print("[CLOSE] closeEvent triggered")
 
         # Stop sync timer
         if hasattr(self, 'sync_timer'):
             self.sync_timer.stop()
-            print("[CLOSE] Sync timer stopped")
 
         # Save position before closing
-        print("[CLOSE] Saving position...")
         self.save_position()
-        print("[CLOSE] Position saved")
 
         # Remove callbacks
         self.remove_callbacks()
@@ -2668,7 +2645,6 @@ fn EskiLayerManagerSceneCallback = (
         # Clear the global instance reference
         global _layer_manager_instance
         _layer_manager_instance[0] = None
-        print("[CLOSE] Instance reference cleared")
 
         super().closeEvent(event)
 
@@ -2704,7 +2680,6 @@ def sync_current_layer():
             _layer_manager_instance[0].isVisible()
             # Update selection to match current layer
             _layer_manager_instance[0].select_active_layer()
-            print("[CALLBACK] Synced current layer selection")
         except (RuntimeError, AttributeError):
             # Widget was deleted
             _layer_manager_instance[0] = None
@@ -2796,12 +2771,10 @@ def show_layer_manager():
             # If we get here, the widget is still valid
             if is_visible:
                 # Window is visible - CLOSE it (toggle off)
-                print("[TOGGLE] Window is visible, closing it")
                 _layer_manager_instance[0].close()
                 return None
             else:
                 # Window exists but hidden - SHOW it (toggle on)
-                print("[TOGGLE] Window exists but hidden, showing it")
                 _layer_manager_instance[0].show()
                 _layer_manager_instance[0].raise_()
                 _layer_manager_instance[0].activateWindow()
@@ -2809,11 +2782,9 @@ def show_layer_manager():
 
         except (RuntimeError, AttributeError):
             # Window was deleted, clear the reference and create new one
-            print("[TOGGLE] Window was deleted, creating new one")
             _layer_manager_instance[0] = None
 
     # No valid instance exists, create a new one
-    print("[TOGGLE] No existing window, creating new one")
 
     # Get the 3ds Max main window
     if QTMAX_AVAILABLE:
@@ -2833,13 +2804,10 @@ def show_layer_manager():
 
     if saved_pos:
         # Restore from saved position
-        print(f"[POSITION] Restoring saved position")
-
         if max_main_window:
             # First, add widget to main window (required before restoreState)
             if saved_pos['floating']:
                 # Floating window - add as floating
-                print(f"[POSITION] Restoring as FLOATING at ({saved_pos['x']}, {saved_pos['y']})")
                 max_main_window.addDockWidget(QtCore.Qt.RightDockWidgetArea, layer_manager)
                 layer_manager.setFloating(True)
                 layer_manager.move(saved_pos['x'], saved_pos['y'])
@@ -2848,10 +2816,8 @@ def show_layer_manager():
                 dock_area = QtCore.Qt.RightDockWidgetArea  # default
                 if saved_pos['dock_area'] == 'left':
                     dock_area = QtCore.Qt.LeftDockWidgetArea
-                    print(f"[POSITION] Restoring as DOCKED LEFT")
                 elif saved_pos['dock_area'] == 'right':
                     dock_area = QtCore.Qt.RightDockWidgetArea
-                    print(f"[POSITION] Restoring as DOCKED RIGHT")
 
                 # Try to find a reference widget to split from
                 reference_widget = None
@@ -2859,30 +2825,24 @@ def show_layer_manager():
 
                 # First, try to find the widget we were below (prefer "above" reference)
                 if saved_pos.get('relative_above'):
-                    print(f"[POSITION] Looking for reference widget: {saved_pos['relative_above']}")
                     for widget in max_main_window.findChildren(QtWidgets.QDockWidget):
                         if widget.objectName() == saved_pos['relative_above']:
                             area = max_main_window.dockWidgetArea(widget)
                             if area == dock_area and not widget.isFloating():
                                 reference_widget = widget
-                                print(f"[POSITION] Found reference widget (will split below it)")
                                 break
 
                 # If not found, try the widget we were above
                 if not reference_widget and saved_pos.get('relative_below'):
-                    print(f"[POSITION] Looking for reference widget: {saved_pos['relative_below']}")
                     for widget in max_main_window.findChildren(QtWidgets.QDockWidget):
                         if widget.objectName() == saved_pos['relative_below']:
                             area = max_main_window.dockWidgetArea(widget)
                             if area == dock_area and not widget.isFloating():
                                 reference_widget = widget
-                                print(f"[POSITION] Found reference widget (will split above it)")
                                 break
 
                 # Restore using reference widget if found
                 if reference_widget:
-                    print(f"[POSITION] Using splitDockWidget to restore relative position")
-                    print(f"[POSITION] Reference widget Y: {reference_widget.geometry().y()}")
 
                     # Add to the area first
                     max_main_window.addDockWidget(dock_area, layer_manager)
@@ -2894,23 +2854,17 @@ def show_layer_manager():
 
                     if saved_pos.get('relative_above'):
                         # We were below the reference widget, so: reference THEN us
-                        print(f"[POSITION] Splitting: reference widget THEN our widget (we're below)")
                         max_main_window.splitDockWidget(reference_widget, layer_manager, orientation)
                     else:
                         # We were above the reference widget, so: us THEN reference
-                        print(f"[POSITION] Splitting: our widget THEN reference widget (we're above)")
                         max_main_window.splitDockWidget(layer_manager, reference_widget, orientation)
 
-                    print(f"[POSITION] After split, our Y: {layer_manager.geometry().y()}")
                 else:
-                    print(f"[POSITION] No reference widget found, using default position")
                     max_main_window.addDockWidget(dock_area, layer_manager)
 
-                print(f"[POSITION] setFloating(False) to ensure docked")
                 layer_manager.setFloating(False)  # Explicitly ensure it stays docked
 
             # Restore size
-            print(f"[POSITION] Resizing to {saved_pos['width']}x{saved_pos['height']}")
             layer_manager.resize(saved_pos['width'], saved_pos['height'])
         else:
             # No main window (testing mode) - just apply position
@@ -2918,7 +2872,6 @@ def show_layer_manager():
             layer_manager.resize(saved_pos['width'], saved_pos['height'])
     else:
         # No saved position - use default: floating and centered
-        print("[POSITION] No saved position, using default: floating and centered")
 
         if max_main_window:
             # Add as floating widget
