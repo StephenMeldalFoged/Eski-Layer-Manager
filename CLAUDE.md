@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, improving upon the built-in layer management tools.
 
-**Current Version:** 0.19.2
+**Current Version:** 0.19.7
 
 ## Quick Reference
 
@@ -200,10 +200,14 @@ Bottom panel shows objects in the selected layer:
 - **Drag-and-drop reassignment:** Drag objects from objects tree to any layer in layers tree to reassign
 - **Cross-tree drag-drop:** `CustomTreeWidget.dropEvent()` detects source widget and handles appropriately
 - **Automatic refresh:** Object list updates when selecting different layers
-- Key methods:
-  - `populate_objects(layer_name)` - Fills objects tree for specified layer
-  - `on_object_selection_changed()` - Syncs tree selection to scene selection
-  - `reassign_objects_to_layer()` - Handles drag-drop reassignment from objects to layers
+- **Object names display:** Shows object name with object count when layer is selected
+
+Key methods:
+- `populate_objects(layer_name)` - Fills objects tree for specified layer
+- `on_object_selection_changed()` - Syncs tree selection to scene selection
+- `reassign_objects_to_layer()` - Handles drag-drop reassignment from objects to layers
+
+**Important:** Objects tree has simpler rendering than layers tree - no custom inline icons, just standard tree view with object names.
 
 ### Position Persistence (v0.11.7+)
 
@@ -213,14 +217,51 @@ Window docking position and state are preserved between sessions:
 - Settings persist across 3ds Max restarts
 - Toggle feature available through UI
 
+### Context Menu System (v0.19.0+)
+
+Right-click context menus provide quick access to layer operations:
+- **Layer tree context menu:** Right-click on layers for operations
+  - Create new layer (on empty area or on existing layer)
+  - Delete layer
+  - Rename layer (inline edit)
+  - Hide/Show layer
+  - Freeze/Unfreeze layer
+  - Select all objects on layer
+  - Isolate layer
+- **Objects tree context menu:** Right-click on objects for operations
+  - Select object in viewport
+  - Remove from layer
+  - Focus on object in viewport
+- **Instant highlighting:** Zero-lag visual feedback on context menu opening (v0.19.1+)
+- **Empty area detection:** Right-click on empty space to create new layers (v0.19.2+)
+- **Qt-based menus:** Uses native Qt context menus (QMenu) with QAction triggers
+- **menuMan integration:** Can access 3ds Max's built-in menu system via `rt.menuMan` (v0.18.7+)
+
+Key implementation patterns:
+```python
+# Context menu on right-click
+def contextMenuEvent(self, event):
+    item = self.itemAt(event.pos())
+    menu = QtWidgets.QMenu(self)
+
+    # Add actions
+    action = menu.addAction("Action Name")
+    action.triggered.connect(lambda: self.handle_action(item))
+
+    # Show menu at cursor
+    menu.exec_(event.globalPos())
+```
+
 ## Development Workflow
 
 ### Git Branching Strategy
 
 - **main**: Stable releases with version tags
 - **Feature branches**: Named descriptively (e.g., `Objects-Tasks`)
+  - Current active branch: `Objects-Tasks` (for object management and task-related features)
 - Version tags follow semantic versioning (v0.x.x)
 - Detailed version history available in `docs/Eski-LayerManager-By-Claude-Version-History.txt`
+- When creating PRs, target the `main` branch
 
 ### Testing the UI
 
@@ -269,9 +310,9 @@ When updating versions:
 Both versions should match for major releases, but installer version may lag behind if only Python code changes.
 
 Update these locations when bumping versions:
-- eski-layer-manager.py line 5: Docstring `Version: X.X.X`
-- eski-layer-manager.py line 36: `VERSION = "X.X.X"`
-- install-Eski-Layer-Manager.ms line 6: `local installerVersion = "X.X.X"` (only when installer changes)
+- eski-layer-manager.py line 4: Docstring `Version: X.X.X`
+- eski-layer-manager.py line 35: `VERSION = "X.X.X"`
+- install-Eski-Layer-Manager.ms line 5: `local installerVersion = "X.X.X"` (only when installer changes)
 
 ## Important 3ds Max Integration Notes
 
@@ -408,9 +449,32 @@ callbacks.show()
 - Ensure only ONE `itemClicked.emit()` per click event
 - Don't manually emit `itemClicked` in `mousePressEvent` if calling `super()`
 
-## Planned Features
+## Feature Implementation Status
 
-See `wishlist.txt` for detailed feature specifications.
-- always increment the version number of the tool in the minor minor number, So I can keep track of if I have the latest version. And print the version made in this window.
-- unremeber anything with max 2024 never look for refferences in max 2024 docs.
-- first search for info about max 2026 before you search for info in older versions of max.
+**Implemented Features:**
+- ✓ Dockable window interface (left/right docking)
+- ✓ Live layer list with automatic refresh via timer and callbacks
+- ✓ Layer hierarchy with parent-child relationships and drag-drop reparenting
+- ✓ Bi-directional sync between UI and 3ds Max (500ms polling + callbacks)
+- ✓ Object tree showing objects in selected layer
+- ✓ Object selection sync (click in tree → select in viewport)
+- ✓ Drag-and-drop object reassignment between layers
+- ✓ Layer visibility toggle (eye icon)
+- ✓ Add selection to layer (+ icon)
+- ✓ Set current layer (click layer name)
+- ✓ Context menus for layers and objects (right-click)
+- ✓ Create/delete/rename layers via context menu
+- ✓ Hide/show/freeze/unfreeze layers
+- ✓ Isolate layer functionality
+- ✓ Position persistence across sessions
+- ✓ Singleton pattern (prevents multiple instances)
+- ✓ Custom tree rendering with inline icons
+
+**Planned Features:**
+See `docs/wishlist.txt` for detailed feature specifications and priorities.
+
+**Development Guidelines:**
+- Always increment version number for EVERY change (patch version: 0.19.x → 0.19.y)
+- Target 3ds Max 2026+ only - do not reference Max 2024 or earlier documentation
+- Search for Max 2026 API documentation first before checking older versions
+- Version number is displayed in the window title

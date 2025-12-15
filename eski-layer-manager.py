@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.19.3
+Version: 0.19.7
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.19.3"
+VERSION = "0.19.7"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -110,11 +110,17 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
         # Calculate visual row number (counting all visible rows from top)
         visual_row = self._get_visual_row_number(index, tree_widget)
 
-        # Draw background (alternating rows) - NO full row selection highlight
-        if visual_row % 2:
-            painter.fillRect(option.rect, option.palette.alternateBase())
+        # Check if item has custom background (e.g., drag highlight)
+        custom_bg = item.background(0)
+        if custom_bg.color().alpha() > 0:
+            # Use custom background (drag highlight)
+            painter.fillRect(option.rect, custom_bg)
         else:
-            painter.fillRect(option.rect, option.palette.base())
+            # Draw background (alternating rows) - NO full row selection highlight
+            if visual_row % 2:
+                painter.fillRect(option.rect, option.palette.alternateBase())
+            else:
+                painter.fillRect(option.rect, option.palette.base())
 
         # Starting X position - use the visual rect which accounts for indentation
         # option.rect gives us the item's visual rect in viewport coordinates
@@ -256,6 +262,9 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         # Enable drops from external sources (like Scene Explorer)
         self.setAcceptDrops(True)
 
+        # Track highlighted item during drag operations
+        self._drag_highlight_item = None
+
     def mousePressEvent(self, event):
         """Intercept mouse press - only allow selection when clicking on layer name"""
         item = self.itemAt(event.pos())
@@ -299,14 +308,59 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         """Accept drag events from external sources (Scene Explorer) and internal sources"""
         # Accept all drag events - we'll filter in dropEvent
         event.acceptProposedAction()
-        print("[DRAG] dragEnterEvent - accepting drag")
 
     def dragMoveEvent(self, event):
-        """Accept drag move events"""
+        """Accept drag move events and highlight target item"""
         event.acceptProposedAction()
+
+        # Get the item under the cursor
+        target_item = self.itemAt(event.pos())
+
+        # Clear previous highlight
+        if self._drag_highlight_item and self._drag_highlight_item != target_item:
+            self._clear_drag_highlight(self._drag_highlight_item)
+
+        # Highlight new target
+        if target_item:
+            self._set_drag_highlight(target_item)
+            self._drag_highlight_item = target_item
+
+    def _set_drag_highlight(self, item):
+        """Set visual highlight on drop target"""
+        if item:
+            # Use a bright teal+green highlight color for maximum visibility
+            item.setBackground(0, QtGui.QColor(0, 220, 180, 200))  # Bright teal-green with high alpha
+            # Only repaint the specific item rect for better performance
+            index = self.indexFromItem(item)
+            if index.isValid():
+                rect = self.visualRect(index)
+                self.viewport().update(rect)
+
+    def _clear_drag_highlight(self, item):
+        """Clear visual highlight from item"""
+        if item:
+            # Reset to transparent (let alternating row colors show through)
+            item.setBackground(0, QtGui.QColor(0, 0, 0, 0))
+            # Only repaint the specific item rect for better performance
+            index = self.indexFromItem(item)
+            if index.isValid():
+                rect = self.visualRect(index)
+                self.viewport().update(rect)
+
+    def dragLeaveEvent(self, event):
+        """Clear highlight when drag leaves the widget"""
+        if self._drag_highlight_item:
+            self._clear_drag_highlight(self._drag_highlight_item)
+            self._drag_highlight_item = None
+        super(CustomTreeWidget, self).dragLeaveEvent(event)
 
     def dropEvent(self, event):
         """Handle drop event to reparent layers, reassign objects, or accept external drops from Scene Explorer"""
+
+        # Clear drag highlight at start of drop
+        if self._drag_highlight_item:
+            self._clear_drag_highlight(self._drag_highlight_item)
+            self._drag_highlight_item = None
 
         # Check if this is a drag from the objects tree
         source_widget = event.source()
@@ -976,6 +1030,15 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.objects_toggle_btn.setMinimumWidth(70)  # Minimum width for text
 
         button_layout.addWidget(self.objects_toggle_btn)
+
+        # Add Export button
+        self.export_btn = QtWidgets.QPushButton("Export")
+        self.export_btn.setToolTip("Export (Coming Soon)")
+        self.export_btn.clicked.connect(self.on_export_click)
+        self.export_btn.setFixedHeight(32)  # Match other button height
+        self.export_btn.setMinimumWidth(70)  # Minimum width for text
+
+        button_layout.addWidget(self.export_btn)
 
         top_layout.insertLayout(0, button_layout)
 
@@ -1784,6 +1847,11 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         else:
             # Hide objects panel
             self.bottom_widget.hide()
+
+    def on_export_click(self):
+        """Handle Export button click - placeholder for future export functionality"""
+        # TODO: Implement export functionality
+        pass
 
     def delete_layer(self, layer_name):
         """Delete a layer by name"""
