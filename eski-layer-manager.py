@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.20.3
+Version: 0.20.4
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.20.3"
+VERSION = "0.20.4"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -939,6 +939,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.status_label = QtWidgets.QLabel(f"Version {VERSION}")
         self.status_label.setFixedHeight(18)
         self.status_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self.status_label.setCursor(QtCore.Qt.PointingHandCursor)  # Show pointer cursor
         self.status_label.setStyleSheet("""
             QLabel {
                 padding: 2px 5px;
@@ -947,7 +948,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 font-size: 10px;
                 border-top: 1px solid #3a3a3a;
             }
+            QLabel:hover {
+                background-color: #3a3a3a;
+                color: #ffffff;
+            }
         """)
+        self.status_label.mousePressEvent = self.on_status_clicked
         main_layout.addWidget(self.status_label)
 
         # Set minimum size
@@ -2311,6 +2317,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         if hasattr(self, 'status_label') and hasattr(self, 'tips'):
             self.status_label.setText(self.tips[self.current_tip_index])
             self.current_tip_index = (self.current_tip_index + 1) % len(self.tips)
+
+    def on_status_clicked(self, event):
+        """Handle click on status bar to skip to next tip"""
+        self.rotate_tip()
 
     def _update_layer_icon_recursive(self, parent_item, layer_name, is_hidden):
         """Recursively search tree and update icon for matching layer"""
