@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, improving upon the built-in layer management tools.
 
-**Current Version:** 0.19.7
+**Current Version:** 0.19.8
 
 ## Quick Reference
 
@@ -103,6 +103,10 @@ The UI uses a **single column layout** where all elements are painted inline:
 - Click regions stored as `item.click_regions` dict with 'visibility', 'add_selection', 'name' keys
 - Current Y position stored as `item.current_item_y` (integer, not QRect to avoid GC issues)
 - Viewport coordinates used for all click detection
+
+**Keyboard modifiers (v0.19.8+):**
+- **Eye icon click**: Toggle layer visibility
+- **Ctrl+Click eye icon**: Isolate layer (hide all other layers)
 
 ### Custom Tree Rendering (v0.8.0+)
 

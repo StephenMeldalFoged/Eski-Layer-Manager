@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.19.7
+Version: 0.19.8
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.19.7"
+VERSION = "0.19.8"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -1426,8 +1426,14 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 if 'visibility' in item.click_regions:
                     vis_rect = item.click_regions['visibility'].translated(0, y_offset)
                     if vis_rect.contains(cursor_pos):
-                        # Toggle visibility only - do NOT select row or activate layer
-                        self.toggle_layer_visibility(item, layer_name)
+                        # Check if Ctrl is pressed for isolate mode
+                        modifiers = QtWidgets.QApplication.keyboardModifiers()
+                        if modifiers & QtCore.Qt.ControlModifier:
+                            # Ctrl+Click on eye = Isolate layer (hide all others)
+                            self.isolate_layer(layer_name)
+                        else:
+                            # Normal click = Toggle visibility only
+                            self.toggle_layer_visibility(item, layer_name)
                         return
 
                 if 'add_selection' in item.click_regions:
