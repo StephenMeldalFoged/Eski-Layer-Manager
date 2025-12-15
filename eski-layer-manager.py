@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.20.2
+Version: 0.20.3
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.20.2"
+VERSION = "0.20.3"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -638,6 +638,25 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Setup timer to poll for current layer changes (fallback if callback doesn't work)
         self.setup_sync_timer()
+
+        # Setup tips rotation
+        self.tips = [
+            "Tip: Ctrl+Click the eye icon to isolate a layer",
+            "Tip: Drag layers onto each other to create parent-child relationships",
+            "Tip: Double-click a layer name to rename it",
+            "Tip: Right-click for quick access to layer operations",
+            "Tip: Drag objects from the Objects panel to reassign to different layers",
+            "Tip: Click the + icon to quickly add selected objects to a layer",
+            "Tip: Use the Objects toggle button to show/hide the objects panel",
+            "Tip: Ctrl+Click an isolated layer's eye icon again to restore visibility",
+            "Tip: Drag from 3ds Max Scene Explorer directly into layers",
+            "Tip: Click a layer name to make it the active layer in 3ds Max"
+        ]
+        self.current_tip_index = 0
+        self.tip_timer = QtCore.QTimer(self)
+        self.tip_timer.timeout.connect(self.rotate_tip)
+        self.tip_timer.start(7000)  # 7 seconds
+        self.rotate_tip()  # Show first tip immediately
 
     def load_visibility_icons(self):
         """Load native 3ds Max visibility icons using Qt resource system"""
@@ -2287,6 +2306,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.sync_timer.start(500)
         pass  # Debug print removed
 
+    def rotate_tip(self):
+        """Rotate to the next tip in the status bar"""
+        if hasattr(self, 'status_label') and hasattr(self, 'tips'):
+            self.status_label.setText(self.tips[self.current_tip_index])
+            self.current_tip_index = (self.current_tip_index + 1) % len(self.tips)
+
     def _update_layer_icon_recursive(self, parent_item, layer_name, is_hidden):
         """Recursively search tree and update icon for matching layer"""
         for i in range(parent_item.childCount()):
@@ -2650,6 +2675,10 @@ fn EskiLayerManagerSceneCallback = (
         # Stop sync timer
         if hasattr(self, 'sync_timer'):
             self.sync_timer.stop()
+
+        # Stop tip rotation timer
+        if hasattr(self, 'tip_timer'):
+            self.tip_timer.stop()
 
         # Save position before closing
         self.save_position()
