@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.20.4
+Version: 0.20.5
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.20.4"
+VERSION = "0.20.5"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -655,7 +655,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.current_tip_index = 0
         self.tip_timer = QtCore.QTimer(self)
         self.tip_timer.timeout.connect(self.rotate_tip)
-        self.tip_timer.start(7000)  # 7 seconds
+        self.tip_timer.start(12000)  # 12 seconds
         self.rotate_tip()  # Show first tip immediately
 
     def load_visibility_icons(self):
@@ -954,6 +954,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             }
         """)
         self.status_label.mousePressEvent = self.on_status_clicked
+        self.status_label.enterEvent = self.on_status_hover_enter
+        self.status_label.leaveEvent = self.on_status_hover_leave
         main_layout.addWidget(self.status_label)
 
         # Set minimum size
@@ -2321,6 +2323,16 @@ class EskiLayerManager(QtWidgets.QDockWidget):
     def on_status_clicked(self, event):
         """Handle click on status bar to skip to next tip"""
         self.rotate_tip()
+
+    def on_status_hover_enter(self, event):
+        """Handle mouse entering status bar - pause timer"""
+        if hasattr(self, 'tip_timer'):
+            self.tip_timer.stop()
+
+    def on_status_hover_leave(self, event):
+        """Handle mouse leaving status bar - restart timer from 0"""
+        if hasattr(self, 'tip_timer'):
+            self.tip_timer.start(12000)  # Reset and restart timer
 
     def _update_layer_icon_recursive(self, parent_item, layer_name, is_hidden):
         """Recursively search tree and update icon for matching layer"""
