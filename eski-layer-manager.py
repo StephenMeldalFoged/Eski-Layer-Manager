@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.19.8
+Version: 0.19.9
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.19.8"
+VERSION = "0.19.9"
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -618,6 +618,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Track layers that contain selected objects (for green dot indicator)
         self.layers_with_selection = set()
+
+        # Track isolation state for undo functionality
+        self.isolation_state = None  # Stores {layer_name: is_hidden} before isolation
+        self.isolated_layer = None  # Name of currently isolated layer
 
         # Load native 3ds Max icons for visibility and add selection
         self.load_visibility_icons()
@@ -1934,7 +1938,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             print(f"[ERROR] Failed to select layer objects: {e}")
 
     def isolate_layer(self, layer_name):
-        """Hide all layers except the specified one"""
+        """Toggle isolation: Hide all layers except specified one, or restore previous state"""
         if rt is None:
             return
 
@@ -1942,18 +1946,39 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             layer_manager = rt.LayerManager
             layer_count = layer_manager.count
 
-            # Hide all layers except the target
-            for i in range(layer_count):
-                layer = layer_manager.getLayer(i)
-                if layer.name == layer_name:
-                    layer.ishidden = False
-                else:
-                    layer.ishidden = True
+            # Check if we're already isolating this layer
+            if self.isolated_layer == layer_name and self.isolation_state is not None:
+                # Restore previous visibility state
+                for i in range(layer_count):
+                    layer = layer_manager.getLayer(i)
+                    if layer.name in self.isolation_state:
+                        layer.ishidden = self.isolation_state[layer.name]
+
+                # Clear isolation state
+                self.isolation_state = None
+                self.isolated_layer = None
+            else:
+                # Save current visibility state before isolating
+                self.isolation_state = {}
+                for i in range(layer_count):
+                    layer = layer_manager.getLayer(i)
+                    self.isolation_state[layer.name] = layer.ishidden
+
+                # Isolate the target layer
+                for i in range(layer_count):
+                    layer = layer_manager.getLayer(i)
+                    if layer.name == layer_name:
+                        layer.ishidden = False
+                    else:
+                        layer.ishidden = True
+
+                # Track which layer is isolated
+                self.isolated_layer = layer_name
 
             self.populate_layers()
 
         except Exception as e:
-            print(f"[ERROR] Failed to isolate layer: {e}")
+            print(f"[ERROR] Failed to isolate/restore layer: {e}")
 
     def toggle_layer_freeze(self, layer_name):
         """Toggle freeze state of a layer"""
