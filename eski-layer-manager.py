@@ -2,27 +2,24 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.20.6
+Version: 0.20.9
 """
 
+from typing import Optional, List, Tuple, Dict, Set, Any
 from PySide6 import QtWidgets, QtCore, QtGui
 
 # Import pymxs (required for 3ds Max API access)
 try:
     from pymxs import runtime as rt
-    pass  # Debug print removed
 except ImportError as e:
     # For development/testing outside 3ds Max
     rt = None
-    pass  # Debug print removed
 
 # Import MaxPlus (optional - deprecated in 3ds Max 2023+)
 try:
     import MaxPlus
-    pass  # Debug print removed
 except ImportError:
     MaxPlus = None
-    pass  # Debug print removed
 
 # Try to import qtmax for docking functionality
 try:
@@ -33,7 +30,37 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.20.6"
+VERSION = "0.20.9"
+
+# UI Constants
+ICON_SIZE = 14
+ICON_SPACING = 3
+PLUS_ICON_SIZE = 14
+PLUS_ICON_SPACING = 3
+DOT_SIZE = 6
+DOT_MARGIN = 8
+TEXT_PADDING = 8
+
+# Window Dimensions
+DEFAULT_WINDOW_WIDTH = 350
+DEFAULT_WINDOW_HEIGHT = 800
+
+# Timer Intervals (milliseconds)
+SYNC_TIMER_INTERVAL = 500
+TIP_ROTATION_INTERVAL = 12000
+PROGRESS_BAR_RESET_DELAY = 200
+VERSION_DISPLAY_DURATION = 10000  # Show version for 10 seconds before tips
+
+# Progress Bar Values
+PROGRESS_START = 0
+PROGRESS_LOW = 30
+PROGRESS_MID_LOW = 50
+PROGRESS_MID = 60
+PROGRESS_MID_HIGH = 70
+PROGRESS_HIGH = 80
+PROGRESS_HIGHER = 85
+PROGRESS_VERY_HIGH = 90
+PROGRESS_COMPLETE = 100
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -49,13 +76,13 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
     Layout: [tree lines] [arrow] [eye] [+] [layer name]
     """
 
-    def __init__(self, layer_manager, parent=None):
+    def __init__(self, layer_manager: 'EskiLayerManager', parent: Optional[QtCore.QObject] = None) -> None:
         super(InlineIconDelegate, self).__init__(parent)
         self.layer_manager = layer_manager
-        self.icon_size = 14  # Compact size to save vertical space
-        self.icon_spacing = 3
-        self.plus_icon_size = 14  # Match main icon size for consistency
-        self.plus_icon_spacing = 3  # Compact spacing
+        self.icon_size = ICON_SIZE
+        self.icon_spacing = ICON_SPACING
+        self.plus_icon_size = PLUS_ICON_SIZE
+        self.plus_icon_spacing = PLUS_ICON_SPACING
 
     def _get_visual_row_number(self, index, tree_widget):
         """Calculate the visual row number by counting all visible rows from top"""
@@ -178,7 +205,7 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
         text_width = font_metrics.horizontalAdvance(layer_name)
 
         # Create tight rect just for the text
-        text_rect = QtCore.QRect(x, y, text_width + 8, h)  # +8 for small padding
+        text_rect = QtCore.QRect(x, y, text_width + TEXT_PADDING, h)
         name_rect = QtCore.QRect(x, y, option.rect.right() - x, h)  # Full clickable area
         item.click_regions['name'] = name_rect
 
@@ -195,18 +222,14 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
 
         # 4. Draw green dot indicator if layer contains selected objects (right-aligned)
         if layer_name in self.layer_manager.layers_with_selection:
-            # Green dot size
-            dot_size = 6
-            dot_margin = 8  # Distance from right edge
-
             # Position on the right side
-            dot_x = option.rect.right() - dot_margin - dot_size
-            dot_y = y + (h - dot_size) // 2  # Center vertically
+            dot_x = option.rect.right() - DOT_MARGIN - DOT_SIZE
+            dot_y = y + (h - DOT_SIZE) // 2  # Center vertically
 
             # Draw green circle
             painter.setBrush(QtGui.QColor(0, 255, 0))  # Bright green
             painter.setPen(QtCore.Qt.NoPen)  # No outline
-            painter.drawEllipse(dot_x, dot_y, dot_size, dot_size)
+            painter.drawEllipse(dot_x, dot_y, DOT_SIZE, DOT_SIZE)
 
         painter.restore()
 
@@ -255,9 +278,9 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
 class CustomTreeWidget(QtWidgets.QTreeWidget):
     """Custom QTreeWidget that only allows selection on column 3"""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super(CustomTreeWidget, self).__init__(parent)
-        self.layer_manager = None  # Will be set by EskiLayerManager
+        self.layer_manager: Optional['EskiLayerManager'] = None  # Will be set by EskiLayerManager
 
         # Enable drops from external sources (like Scene Explorer)
         self.setAcceptDrops(True)
@@ -584,7 +607,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
     Main dockable window for Eski Layer Manager
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super(EskiLayerManager, self).__init__(parent)
 
         # Set window title with version
@@ -631,7 +654,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.init_ui()
 
         # Set default size (taller window)
-        self.resize(350, 800)  # Width: 350px, Height: 800px (was default ~400px)
+        self.resize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
 
         # Note: Position restoration is now handled in show_layer_manager()
         # This ensures saved position is applied AFTER the widget is added to the main window
@@ -675,8 +698,48 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.current_tip_index = 0
         self.tip_timer = QtCore.QTimer(self)
         self.tip_timer.timeout.connect(self.rotate_tip)
-        self.tip_timer.start(12000)  # 12 seconds
-        self.rotate_tip()  # Show first tip immediately
+
+        # Show version number first for 10 seconds, then start tips
+        self.status_label.setText(f"Eski Layer Manager v{VERSION}")
+        QtCore.QTimer.singleShot(VERSION_DISPLAY_DURATION, self.start_tip_rotation)
+
+    # Helper Methods - Reduce Code Duplication
+
+    def _update_progress(self, value: int) -> None:
+        """Update progress bar value"""
+        self.progress_bar.setValue(value)
+
+    def _complete_progress(self) -> None:
+        """Complete progress and reset after delay"""
+        self.progress_bar.setValue(PROGRESS_COMPLETE)
+        QtCore.QTimer.singleShot(PROGRESS_BAR_RESET_DELAY, lambda: self.progress_bar.setValue(PROGRESS_START))
+
+    def _reset_progress(self) -> None:
+        """Reset progress bar to start"""
+        self.progress_bar.setValue(PROGRESS_START)
+
+    def _log_error(self, context: str, error: Exception) -> None:
+        """Log error with context and traceback"""
+        import traceback
+        error_msg = f"Error in {context}: {str(error)}\n{traceback.format_exc()}"
+        print(f"[ERROR] {error_msg}")
+
+    def _set_tree_item_icons(self, item: QtWidgets.QTreeWidgetItem, layer: Any, is_hidden: bool, is_frozen: bool) -> None:
+        """Set visibility and add selection icons for a tree item"""
+        # Set visibility icon based on state
+        if is_frozen:
+            vis_icon = "🔒" if not self.use_native_icons else self.icon_hidden
+        elif is_hidden:
+            vis_icon = "✖" if not self.use_native_icons else self.icon_hidden
+        else:
+            vis_icon = "👁" if not self.use_native_icons else self.icon_visible
+
+        # Set add selection icon
+        add_icon = "+" if not self.use_native_add_icon else self.icon_add_selection
+
+        # Store icons in UserRole data
+        item.setData(0, QtCore.Qt.UserRole + 1, vis_icon)
+        item.setData(0, QtCore.Qt.UserRole + 2, add_icon)
 
     def load_visibility_icons(self):
         """Load native 3ds Max visibility icons using Qt resource system"""
@@ -719,16 +782,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                                 pass
 
                             self.use_native_icons = True
-                            pass  # Debug print removed
-                            pass  # Debug print removed
                             return
-                        else:
-                            pass  # Debug print removed
                 except Exception as e:
-                    pass  # Debug print removed
+                    pass
 
         except Exception as e:
-            pass  # Debug print removed
+            pass
 
         # Try Qt resource system paths
         icon_candidates = [
@@ -766,13 +825,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         pass
 
                     self.use_native_icons = True
-                    pass  # Debug print removed
                     return
-                else:
-                    pass  # Debug print removed
 
         # No native icons found - will use Unicode fallback
-        pass  # Debug print removed
 
     def load_add_selection_icon(self):
         """Load native 3ds Max icon for AddSelectionToCurrentLayer"""
@@ -789,12 +844,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 if len(add_icon.availableSizes()) > 0:
                     self.icon_add_selection = add_icon
                     self.use_native_add_icon = True
-                    pass  # Debug print removed
                     return
-                else:
-                    pass  # Debug print removed
         except Exception as e:
-            pass  # Debug print removed
+            pass
 
         # Try Qt resource paths
         icon_candidates = [
@@ -808,11 +860,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             if not add_icon.isNull() and len(add_icon.availableSizes()) > 0:
                 self.icon_add_selection = add_icon
                 self.use_native_add_icon = True
-                pass  # Debug print removed
                 return
 
         # No native icon found - will use Unicode fallback "+"
-        pass  # Debug print removed
 
     def init_ui(self):
         """Initialize the user interface"""
@@ -1115,7 +1165,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.progress_bar.setFixedHeight(1)  # 1 pixel tall
         self.progress_bar.setTextVisible(False)  # No text
         self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)  # Start at 0
+        self._reset_progress()
         self.progress_bar.setStyleSheet("""
             QProgressBar {
                 border: none;
@@ -1307,7 +1357,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
     def populate_objects(self, layer_name):
         """Populate the objects tree with objects from the specified layer (flat list)"""
         # Show progress start
-        self.progress_bar.setValue(30)
+        self.progress_bar.setValue(PROGRESS_LOW)
 
         self.objects_tree.clear()
 
@@ -1325,21 +1375,20 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 item = QtWidgets.QTreeWidgetItem(self.objects_tree, [obj_name])
                 # No icons for objects - just the name
             # Complete progress
-            self.progress_bar.setValue(100)
-            QtCore.QTimer.singleShot(200, lambda: self.progress_bar.setValue(0))
+            self._complete_progress()
             return
 
         try:
             # Find the layer
             layer = self._find_layer_by_name(layer_name)
             if not layer:
-                self.progress_bar.setValue(0)
+                self._reset_progress()
                 return
 
             # Get all objects in the scene
             all_nodes = rt.objects
 
-            self.progress_bar.setValue(50)
+            self._update_progress(PROGRESS_MID_LOW)
 
             # Filter objects that belong to this layer
             layer_objects = []
@@ -1350,7 +1399,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 except:
                     pass
 
-            self.progress_bar.setValue(70)
+            self._update_progress(PROGRESS_MID_HIGH)
 
             # Sort objects by name
             layer_objects.sort(key=lambda x: str(x.name).lower())
@@ -1365,18 +1414,15 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 except Exception as e:
                     print(f"[ERROR] Failed to add object to tree: {e}")
 
-            self.progress_bar.setValue(90)
+            self._update_progress(PROGRESS_VERY_HIGH)
 
             # Complete progress
-            self.progress_bar.setValue(100)
-            QtCore.QTimer.singleShot(200, lambda: self.progress_bar.setValue(0))
+            self._complete_progress()
 
         except Exception as e:
-            print(f"[ERROR] populate_objects failed: {e}")
-            import traceback
-            traceback.print_exc()
+            self._log_error("populate_objects", e)
             # Reset progress on error
-            self.progress_bar.setValue(0)
+            self._reset_progress()
 
     def select_active_layer(self):
         """Find and select the currently active layer in the tree"""
@@ -1427,7 +1473,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 self.populate_objects(current_layer_name)
 
         except Exception as e:
-            pass  # Debug print removed
+            pass
 
     def on_object_selection_changed(self):
         """Handle object selection change - select objects in 3ds Max scene"""
@@ -1455,9 +1501,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 rt.select(selection_array)
 
         except Exception as e:
-            print(f"[ERROR] on_object_selection_changed failed: {e}")
-            import traceback
-            traceback.print_exc()
+            self._log_error("on_object_selection_changed", e)
 
     def on_layer_clicked(self, item, column):
         """Handle layer click - toggle visibility, add selection, or set active layer (single column)"""
@@ -1522,9 +1566,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             self.set_current_layer(layer_name)
 
         except Exception as e:
-            import traceback
-            error_msg = f"Error handling layer click: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
+            self._log_error("layer click", e)
 
     def toggle_layer_visibility(self, item, layer_name):
         """Toggle layer visibility (hide/unhide)"""
@@ -1552,7 +1594,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     return
 
                 # Show progress
-                self.progress_bar.setValue(30)
+                self._update_progress(PROGRESS_LOW)
 
                 # Get the new visibility state (toggled)
                 new_hidden_state = not layer.ishidden
@@ -1560,7 +1602,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 # Toggle visibility - set the layer hidden state
                 layer.ishidden = new_hidden_state
 
-                self.progress_bar.setValue(50)
+                self._update_progress(PROGRESS_MID_LOW)
 
                 # Also hide/unhide all objects on this layer in the viewport
                 # This ensures objects actually disappear/appear in the scene
@@ -1571,7 +1613,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 except Exception as e:
                     print(f"[ERROR] Failed to hide/unhide objects: {e}")
 
-                self.progress_bar.setValue(70)
+                self._update_progress(PROGRESS_MID_HIGH)
 
                 # Update our internal tracking BEFORE updating UI to prevent sync timer from reverting
                 self.last_visibility_states[layer_name] = new_hidden_state
@@ -1586,22 +1628,20 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 # Trigger repaint
                 self.layer_tree.update(self.layer_tree.indexFromItem(item))
 
-                self.progress_bar.setValue(85)
+                self._update_progress(PROGRESS_HIGHER)
 
                 # Force complete viewport refresh to show/hide objects immediately
                 rt.execute("redrawViews #all")
                 rt.completeRedraw()
 
                 # Complete progress
-                self.progress_bar.setValue(100)
+                self.progress_bar.setValue(PROGRESS_COMPLETE)
 
                 # Reset progress after short delay
-                QtCore.QTimer.singleShot(200, lambda: self.progress_bar.setValue(0))
+                QtCore.QTimer.singleShot(PROGRESS_BAR_RESET_DELAY, lambda: self.progress_bar.setValue(PROGRESS_START))
 
         except Exception as e:
-            import traceback
-            error_msg = f"Error toggling layer visibility: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
+            self._log_error("toggle layer visibility", e)
 
     def _find_layer_by_name(self, layer_name):
         """Recursively search for a layer by name in the entire layer hierarchy"""
@@ -1686,14 +1726,14 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 object_count = len(selected_objects)
 
                 # Show progress start
-                self.progress_bar.setValue(30)
+                self._update_progress(PROGRESS_LOW)
 
                 # Only use performance optimization for 10+ objects
                 if object_count >= 10:
                     try:
                         # Disable scene redraw for many objects
                         rt.disableSceneRedraw()
-                        self.progress_bar.setValue(50)
+                        self._update_progress(PROGRESS_MID_LOW)
 
                         # Batch assign - use MAXScript with quiet mode to suppress listener output
                         rt.execute(f"""
@@ -1704,7 +1744,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         )
                         """)
 
-                        self.progress_bar.setValue(80)
+                        self._update_progress(PROGRESS_HIGH)
 
                     finally:
                         # Always re-enable scene redraw
@@ -1713,22 +1753,19 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     # For small number of objects, just do it normally
                     for obj in selected_objects:
                         target_layer.addNode(obj)
-                    self.progress_bar.setValue(80)
+                    self._update_progress(PROGRESS_HIGH)
 
                 # Complete refresh
                 rt.execute("redrawViews #all")
                 rt.completeRedraw()
 
                 # Complete progress
-                self.progress_bar.setValue(100)
-                QtCore.QTimer.singleShot(200, lambda: self.progress_bar.setValue(0))
+                self._complete_progress()
             else:
                 print(f"[ERROR] Layer '{layer_name}' not found")
 
         except Exception as e:
-            import traceback
-            error_msg = f"Error adding selection to layer: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
+            self._log_error("add selection to layer", e)
             # Make sure to re-enable scene redraw if we crashed mid-operation
             try:
                 rt.enableSceneRedraw()
@@ -1795,9 +1832,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 self.populate_objects(self.current_objects_layer)
 
         except Exception as e:
-            import traceback
-            error_msg = f"Error reassigning objects to layer: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
+            self._log_error("reassign objects to layer", e)
 
     def set_current_layer(self, layer_name):
         """Set the layer as current/active in 3ds Max"""
@@ -1811,12 +1846,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             if layer:
                 # Set this layer as the current layer
                 layer.current = True
-                pass  # Debug print removed
 
         except Exception as e:
-            import traceback
-            error_msg = f"Error setting active layer: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
+            self._log_error("set active layer", e)
 
     def create_new_layer(self):
         """Create a new layer in 3ds Max"""
@@ -1857,9 +1889,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 QtCore.QTimer.singleShot(100, start_rename)
 
         except Exception as e:
-            import traceback
-            error_msg = f"Error creating new layer: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
+            self._log_error("create new layer", e)
 
     def delete_selected_layer(self):
         """Delete the currently selected layer in the tree"""
@@ -1898,9 +1928,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 print(f"[ERROR] Layer '{layer_name}' not found")
 
         except Exception as e:
-            import traceback
-            error_msg = f"Error deleting layer: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
+            self._log_error("delete layer", e)
 
     def on_objects_toggle(self):
         """Handle Objects toggle button click - show/hide objects panel"""
@@ -2118,9 +2146,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             self.populate_layers()
 
         except Exception as e:
-            import traceback
-            error_msg = f"Error reparenting layer: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
+            self._log_error("reparent layer", e)
 
     def on_layer_double_clicked(self, item, column):
         """Handle layer double-click - start inline rename (single column layout)"""
@@ -2282,16 +2308,12 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             new_name = item.text(0)
             old_name = self.editing_layer_name
 
-            pass  # Debug print removed
-
             # Don't process test mode items
             if old_name.startswith("[TEST MODE]"):
-                pass  # Debug print removed
                 return
 
             # Only process if name actually changed
             if new_name != old_name and new_name:
-                pass  # Debug print removed
                 # Find the layer in 3ds Max by name
                 layer_manager = rt.layerManager
                 layer_count = layer_manager.count
@@ -2301,13 +2323,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     if layer and str(layer.name) == old_name:
                         # Rename the layer in 3ds Max
                         layer.setname(new_name)
-                        pass  # Debug print removed
 
                         # Refresh the layer list to re-sort alphabetically
                         self.populate_layers()
                         break
-            else:
-                pass  # Debug print removed
 
             # Reset editing flag
             self.editing_layer_name = None
@@ -2316,9 +2335,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
 
         except Exception as e:
-            import traceback
-            error_msg = f"Error renaming layer: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
+            self._log_error("rename layer", e)
             # Reset editing flag
             self.editing_layer_name = None
 
@@ -2333,14 +2350,18 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.sync_timer = QtCore.QTimer(self)
         self.sync_timer.timeout.connect(self.check_current_layer_sync)
         # Check every 500ms for current layer changes
-        self.sync_timer.start(500)
-        pass  # Debug print removed
+        self.sync_timer.start(SYNC_TIMER_INTERVAL)
 
     def rotate_tip(self):
         """Rotate to the next tip in the status bar"""
         if hasattr(self, 'status_label') and hasattr(self, 'tips'):
             self.status_label.setText(self.tips[self.current_tip_index])
             self.current_tip_index = (self.current_tip_index + 1) % len(self.tips)
+
+    def start_tip_rotation(self) -> None:
+        """Start the tip rotation timer (called after initial version display)"""
+        self.rotate_tip()  # Show first tip immediately
+        self.tip_timer.start(TIP_ROTATION_INTERVAL)
 
     def on_status_clicked(self, event):
         """Handle click on status bar to skip to next tip"""
@@ -2354,7 +2375,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
     def on_status_hover_leave(self, event):
         """Handle mouse leaving status bar - restart timer from 0"""
         if hasattr(self, 'tip_timer'):
-            self.tip_timer.start(12000)  # Reset and restart timer
+            self.tip_timer.start(TIP_ROTATION_INTERVAL)
 
     def show_all_tips_window(self):
         """Show a window with all tips when right-clicking status bar"""
@@ -2443,7 +2464,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 current_layer_name = str(current_layer.name)
 
                 if current_layer_name != self.last_current_layer:
-                    pass  # Debug print removed
                     self.last_current_layer = current_layer_name
                     # Update selection in tree
                     self.select_active_layer()
@@ -2536,11 +2556,10 @@ fn EskiLayerManagerSceneCallback = (
             # Try both possible callback names for layer current change
             try:
                 rt.callbacks.addScript(rt.Name("layerCurrent"), "EskiLayerManagerCurrentCallback()")
-                pass  # Debug print removed
             except:
-                pass  # Debug print removed
                 # Some Max versions might use different callback names
                 # We'll rely on the refresh from clicking in our UI instead
+                pass
 
             # Register callbacks for scene events (use scene refresh - reopen window)
             rt.callbacks.addScript(rt.Name("filePostOpen"), "EskiLayerManagerSceneCallback()")
@@ -2548,9 +2567,8 @@ fn EskiLayerManagerSceneCallback = (
             rt.callbacks.addScript(rt.Name("systemPostNew"), "EskiLayerManagerSceneCallback()")
             # Note: postMerge callback not supported in 3ds Max 2026
 
-            pass  # Debug print removed
         except Exception as e:
-            pass  # Debug print removed
+            pass
 
     def remove_callbacks(self):
         """Remove 3ds Max callbacks"""
@@ -2567,9 +2585,8 @@ fn EskiLayerManagerSceneCallback = (
             rt.callbacks.removeScripts(rt.Name("systemPostReset"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("systemPostNew"), id=rt.Name("EskiLayerManagerCallback"))
             # Note: postMerge callback not supported in 3ds Max 2026
-            pass  # Debug print removed
         except Exception as e:
-            pass  # Debug print removed
+            pass
 
     def get_dock_widgets_in_area(self, dock_area):
         """
@@ -2885,7 +2902,7 @@ def get_instance_status():
         }
 
 
-def show_layer_manager():
+def show_layer_manager() -> Optional[EskiLayerManager]:
     """
     Toggle the Eski Layer Manager window (Singleton pattern)
     - If window is open and visible: close it
