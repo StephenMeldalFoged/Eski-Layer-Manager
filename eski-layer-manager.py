@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.20.9
+Version: 0.21.0
 """
 
 from typing import Optional, List, Tuple, Dict, Set, Any
@@ -30,7 +30,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.20.9"
+VERSION = "0.21.0"
 
 # UI Constants
 ICON_SIZE = 14
@@ -602,6 +602,97 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         painter.restore()
 
 
+class ExportSettingsDialog(QtWidgets.QDialog):
+    """Dialog for configuring export settings"""
+
+    def __init__(self, export_settings: Dict, parent=None):
+        super().__init__(parent)
+        self.export_settings = export_settings
+        self.setWindowTitle("Export Settings")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+        self.init_ui()
+
+    def init_ui(self):
+        """Initialize the dialog UI"""
+        layout = QtWidgets.QVBoxLayout()
+
+        # File Format
+        format_group = QtWidgets.QGroupBox("Export Format")
+        format_layout = QtWidgets.QVBoxLayout()
+
+        self.format_json = QtWidgets.QRadioButton("JSON (JavaScript Object Notation)")
+        self.format_csv = QtWidgets.QRadioButton("CSV (Comma-Separated Values)")
+        self.format_txt = QtWidgets.QRadioButton("TXT (Plain Text)")
+
+        # Set current format
+        current_format = self.export_settings['format']
+        if current_format == 'json':
+            self.format_json.setChecked(True)
+        elif current_format == 'csv':
+            self.format_csv.setChecked(True)
+        elif current_format == 'txt':
+            self.format_txt.setChecked(True)
+
+        format_layout.addWidget(self.format_json)
+        format_layout.addWidget(self.format_csv)
+        format_layout.addWidget(self.format_txt)
+        format_group.setLayout(format_layout)
+        layout.addWidget(format_group)
+
+        # Export Options
+        options_group = QtWidgets.QGroupBox("Export Options")
+        options_layout = QtWidgets.QVBoxLayout()
+
+        self.cb_hierarchy = QtWidgets.QCheckBox("Include Hierarchy (Parent/Child relationships)")
+        self.cb_hierarchy.setChecked(self.export_settings['include_hierarchy'])
+
+        self.cb_properties = QtWidgets.QCheckBox("Include Properties (Hidden, Frozen, Current)")
+        self.cb_properties.setChecked(self.export_settings['include_properties'])
+
+        self.cb_object_counts = QtWidgets.QCheckBox("Include Object Counts")
+        self.cb_object_counts.setChecked(self.export_settings['include_object_counts'])
+
+        options_layout.addWidget(self.cb_hierarchy)
+        options_layout.addWidget(self.cb_properties)
+        options_layout.addWidget(self.cb_object_counts)
+        options_group.setLayout(options_layout)
+        layout.addWidget(options_group)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        ok_btn = QtWidgets.QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        ok_btn.setDefault(True)
+
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+
+        button_layout.addWidget(ok_btn)
+        button_layout.addWidget(cancel_btn)
+
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+    def accept(self):
+        """Save settings and close dialog"""
+        # Update export settings
+        if self.format_json.isChecked():
+            self.export_settings['format'] = 'json'
+        elif self.format_csv.isChecked():
+            self.export_settings['format'] = 'csv'
+        elif self.format_txt.isChecked():
+            self.export_settings['format'] = 'txt'
+
+        self.export_settings['include_hierarchy'] = self.cb_hierarchy.isChecked()
+        self.export_settings['include_properties'] = self.cb_properties.isChecked()
+        self.export_settings['include_object_counts'] = self.cb_object_counts.isChecked()
+
+        super().accept()
+
+
 class EskiLayerManager(QtWidgets.QDockWidget):
     """
     Main dockable window for Eski Layer Manager
@@ -645,6 +736,15 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Track isolation state for undo functionality
         self.isolation_state = None  # Stores {layer_name: is_hidden} before isolation
         self.isolated_layer = None  # Name of currently isolated layer
+
+        # Export settings with defaults
+        self.export_settings = {
+            'format': 'json',  # json, csv, or txt
+            'include_hierarchy': True,
+            'include_properties': True,  # hidden, frozen states
+            'include_object_counts': True,
+            'last_export_dir': ''
+        }
 
         # Load native 3ds Max icons for visibility and add selection
         self.load_visibility_icons()
@@ -1151,12 +1251,21 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         # Add Export button
         self.export_btn = QtWidgets.QPushButton("Export")
-        self.export_btn.setToolTip("Export (Coming Soon)")
+        self.export_btn.setToolTip("Export layer structure to file")
         self.export_btn.clicked.connect(self.on_export_click)
         self.export_btn.setFixedHeight(32)  # Match other button height
         self.export_btn.setMinimumWidth(70)  # Minimum width for text
 
         button_layout.addWidget(self.export_btn)
+
+        # Add Export Settings button
+        self.export_settings_btn = QtWidgets.QPushButton("Export Settings")
+        self.export_settings_btn.setToolTip("Configure export settings")
+        self.export_settings_btn.clicked.connect(self.on_export_settings_click)
+        self.export_settings_btn.setFixedHeight(32)  # Match other button height
+        self.export_settings_btn.setMinimumWidth(100)  # Minimum width for text
+
+        button_layout.addWidget(self.export_settings_btn)
 
         top_layout.insertLayout(0, button_layout)
 
@@ -1942,9 +2051,59 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             self.bottom_widget.hide()
 
     def on_export_click(self):
-        """Handle Export button click - placeholder for future export functionality"""
-        # TODO: Implement export functionality
-        pass
+        """Handle Export button click - export layer structure using current settings"""
+        if rt is None:
+            print("[ERROR] Cannot export - not running in 3ds Max")
+            return
+
+        try:
+            # Get file path from user
+            file_format = self.export_settings['format']
+            format_filter = {
+                'json': "JSON Files (*.json)",
+                'csv': "CSV Files (*.csv)",
+                'txt': "Text Files (*.txt)"
+            }.get(file_format, "JSON Files (*.json)")
+
+            # Get starting directory
+            start_dir = self.export_settings['last_export_dir'] if self.export_settings['last_export_dir'] else ""
+
+            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,
+                "Export Layer Structure",
+                start_dir,
+                format_filter
+            )
+
+            if not file_path:
+                return  # User cancelled
+
+            # Save last used directory
+            import os
+            self.export_settings['last_export_dir'] = os.path.dirname(file_path)
+
+            # Collect layer data
+            layer_data = self._collect_layer_data()
+
+            # Export based on format
+            if file_format == 'json':
+                self._export_json(file_path, layer_data)
+            elif file_format == 'csv':
+                self._export_csv(file_path, layer_data)
+            elif file_format == 'txt':
+                self._export_txt(file_path, layer_data)
+
+            print(f"[INFO] Layer structure exported to: {file_path}")
+
+        except Exception as e:
+            self._log_error("export", e)
+
+    def on_export_settings_click(self):
+        """Handle Export Settings button click - open settings dialog"""
+        dialog = ExportSettingsDialog(self.export_settings, self)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            # Settings were updated in the dialog
+            print("[INFO] Export settings updated")
 
     def delete_layer(self, layer_name):
         """Delete a layer by name"""
@@ -2782,6 +2941,81 @@ fn EskiLayerManagerSceneCallback = (
             import traceback
             traceback.print_exc()
             return None
+
+    def _collect_layer_data(self) -> List[Dict]:
+        """Collect layer data for export based on current settings"""
+        if rt is None:
+            return []
+
+        layer_data = []
+        layer_manager = rt.layerManager
+
+        for i in range(layer_manager.count):
+            layer = layer_manager.getLayer(i)
+            layer_info = {
+                'name': str(layer.name)
+            }
+
+            if self.export_settings['include_hierarchy']:
+                parent = layer.getParent()
+                layer_info['parent'] = str(parent.name) if parent and parent != rt.undefined else None
+
+            if self.export_settings['include_properties']:
+                layer_info['hidden'] = bool(layer.ishidden)
+                layer_info['frozen'] = bool(layer.isfrozen)
+                layer_info['current'] = bool(layer.current)
+
+            if self.export_settings['include_object_counts']:
+                layer_info['object_count'] = layer.getNumNodes()
+
+            layer_data.append(layer_info)
+
+        return layer_data
+
+    def _export_json(self, file_path: str, layer_data: List[Dict]) -> None:
+        """Export layer data as JSON"""
+        import json
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(layer_data, f, indent=2, ensure_ascii=False)
+
+    def _export_csv(self, file_path: str, layer_data: List[Dict]) -> None:
+        """Export layer data as CSV"""
+        import csv
+        if not layer_data:
+            return
+
+        with open(file_path, 'w', newline='', encoding='utf-8') as f:
+            fieldnames = list(layer_data[0].keys())
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(layer_data)
+
+    def _export_txt(self, file_path: str, layer_data: List[Dict]) -> None:
+        """Export layer data as formatted text"""
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write("Layer Structure Export\n")
+            f.write("=" * 50 + "\n\n")
+
+            for layer in layer_data:
+                f.write(f"Layer: {layer['name']}\n")
+
+                if 'parent' in layer:
+                    parent_str = layer['parent'] if layer['parent'] else "(Root)"
+                    f.write(f"  Parent: {parent_str}\n")
+
+                if 'hidden' in layer:
+                    f.write(f"  Hidden: {layer['hidden']}\n")
+
+                if 'frozen' in layer:
+                    f.write(f"  Frozen: {layer['frozen']}\n")
+
+                if 'current' in layer:
+                    f.write(f"  Current: {layer['current']}\n")
+
+                if 'object_count' in layer:
+                    f.write(f"  Objects: {layer['object_count']}\n")
+
+                f.write("\n")
 
     def closeEvent(self, event):
         """Handle close event"""
