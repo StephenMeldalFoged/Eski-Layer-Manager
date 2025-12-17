@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.21.0
+Version: 0.21.1
 """
 
 from typing import Optional, List, Tuple, Dict, Set, Any
@@ -30,7 +30,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.21.0"
+VERSION = "0.21.1"
 
 # UI Constants
 ICON_SIZE = 14
@@ -1258,12 +1258,41 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
         button_layout.addWidget(self.export_btn)
 
-        # Add Export Settings button
-        self.export_settings_btn = QtWidgets.QPushButton("Export Settings")
+        # Add Export Settings button with gear icon
+        self.export_settings_btn = QtWidgets.QPushButton()
         self.export_settings_btn.setToolTip("Configure export settings")
         self.export_settings_btn.clicked.connect(self.on_export_settings_click)
-        self.export_settings_btn.setFixedHeight(32)  # Match other button height
-        self.export_settings_btn.setMinimumWidth(100)  # Minimum width for text
+        self.export_settings_btn.setFixedSize(32, 32)  # Square button
+
+        # Try to load gear/settings icon
+        icon_loaded = False
+        if QTMAX_AVAILABLE:
+            import qtmax
+            # Try multiple gear/settings icon paths
+            gear_icon_paths = [
+                "Preferences",
+                "Configure",
+                "Settings",
+                "Tools/Settings",
+                "Common/Settings",
+                "General/Preferences"
+            ]
+
+            for icon_path in gear_icon_paths:
+                try:
+                    settings_icon = qtmax.LoadMaxMultiResIcon(icon_path)
+                    if settings_icon and not settings_icon.isNull():
+                        self.export_settings_btn.setIcon(settings_icon)
+                        self.export_settings_btn.setIconSize(QtCore.QSize(24, 24))
+                        icon_loaded = True
+                        break
+                except:
+                    continue
+
+        # Fallback to gear emoji if native icon not found
+        if not icon_loaded:
+            self.export_settings_btn.setText("⚙")
+            self.export_settings_btn.setStyleSheet("font-size: 18px;")
 
         button_layout.addWidget(self.export_settings_btn)
 
