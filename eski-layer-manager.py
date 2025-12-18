@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.24.0
+Version: 0.24.1
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.24.0"
+VERSION = "0.24.1"
 VERSION_DISPLAY_DURATION = 10000  # Show version for 10 seconds before tips
 
 # Module initialization guard - prevents re-initialization on repeated imports
@@ -1221,6 +1221,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         except:
             pass
 
+        # Save expanded state before clearing
+        expanded_layers = self._save_expanded_state()
+
         self.layer_tree.clear()
 
         if rt is None:
@@ -1279,6 +1282,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Add root layers and their children recursively
             for layer in root_layers:
                 self._add_layer_to_tree(layer, None)
+
+            # Restore expanded state after populating
+            self._restore_expanded_state(expanded_layers)
 
         except Exception as e:
             print(f"[ERROR] populate_layers failed: {e}")
@@ -1366,8 +1372,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
             # Recursively add children
             if has_children:
-                # Expand parent layers by default (like native layer manager)
-                item.setExpanded(True)
+                # Don't expand by default - will be handled by _restore_expanded_state()
+                # (First time opening, all layers will be expanded by default)
 
                 # Get all children and sort them alphabetically
                 children = []
@@ -1734,6 +1740,62 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
             except Exception as e:
                 print(f"[ERROR] Failed to update child icon for '{child_layer_name}': {e}")
+
+    def _save_expanded_state(self):
+        """Save the expanded/collapsed state of all layers before refresh"""
+        expanded_layers = set()
+
+        def save_recursive(parent_item):
+            """Recursively save expanded state for all items"""
+            for i in range(parent_item.childCount()):
+                item = parent_item.child(i)
+                layer_name = item.text(0)
+                if item.isExpanded():
+                    expanded_layers.add(layer_name)
+                # Recursively check children
+                save_recursive(item)
+
+        # Save root items
+        for i in range(self.layer_tree.topLevelItemCount()):
+            item = self.layer_tree.topLevelItem(i)
+            layer_name = item.text(0)
+            if item.isExpanded():
+                expanded_layers.add(layer_name)
+            save_recursive(item)
+
+        return expanded_layers
+
+    def _restore_expanded_state(self, expanded_layers):
+        """Restore the expanded/collapsed state of all layers after refresh"""
+        # If this is the first time (no saved state), expand all by default
+        if not hasattr(self, '_has_saved_state') or not self._has_saved_state:
+            self._has_saved_state = True
+            # Expand all layers on first load
+            self.layer_tree.expandAll()
+            return
+
+        def restore_recursive(parent_item):
+            """Recursively restore expanded state for all items"""
+            for i in range(parent_item.childCount()):
+                item = parent_item.child(i)
+                layer_name = item.text(0)
+                # Set expanded state based on saved state
+                if layer_name in expanded_layers:
+                    item.setExpanded(True)
+                else:
+                    item.setExpanded(False)
+                # Recursively restore children
+                restore_recursive(item)
+
+        # Restore root items
+        for i in range(self.layer_tree.topLevelItemCount()):
+            item = self.layer_tree.topLevelItem(i)
+            layer_name = item.text(0)
+            if layer_name in expanded_layers:
+                item.setExpanded(True)
+            else:
+                item.setExpanded(False)
+            restore_recursive(item)
 
     def _find_layer_by_name(self, layer_name):
         """Recursively search for a layer by name in the entire layer hierarchy"""
