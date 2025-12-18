@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.23.6
+Version: 0.23.7
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.23.6"
+VERSION = "0.23.7"
 VERSION_DISPLAY_DURATION = 10000  # Show version for 10 seconds before tips
 
 # Module initialization guard - prevents re-initialization on repeated imports
@@ -2416,8 +2416,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         """Setup timer to poll for current layer changes (syncs with native layer manager)"""
         self.sync_timer = QtCore.QTimer(self)
         self.sync_timer.timeout.connect(self.check_current_layer_sync)
-        # Check every 5000ms (5 seconds) for current layer changes
-        self.sync_timer.start(5000)
+        # Check every 500ms for current layer changes
+        self.sync_timer.start(500)
         pass  # Debug print removed
 
     def start_tip_rotation(self):
