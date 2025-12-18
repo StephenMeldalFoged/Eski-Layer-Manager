@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, improving upon the built-in layer management tools.
 
-**Current Version:** 0.20.6
+**Current Version:** 0.23.6
 
 ## Quick Reference
 
@@ -29,7 +29,7 @@ eski_layer_manager.show_layer_manager()
 
 ```
 Eski-Layer-Manager/
-├── eski-layer-manager.py          # Main Python application (830+ lines)
+├── eski-layer-manager.py          # Main Python application (1100+ lines)
 ├── install-Eski-Layer-Manager.ms        # MAXScript installer with GUI
 ├── CLAUDE.md                       # This file - development guide
 ├── README.md                       # User-facing documentation
@@ -257,13 +257,41 @@ def contextMenuEvent(self, event):
     menu.exec_(event.globalPos())
 ```
 
+### Status Bar with Tips System (v0.20.2+)
+
+Built-in status bar displays helpful tips and version information:
+- **Version display:** Shows version for 10 seconds on launch
+- **Cycling tips:** Rotates through 40+ tips and tricks every 12 seconds
+- **Pause on hover:** Timer pauses when mouse hovers over status bar
+- **Click to skip:** Click status bar to advance to next tip immediately
+- **Right-click tips window:** Right-click status bar to open scrollable tips reference window
+- **Persistent across sessions:** Last shown tip index persisted via QSettings
+
+Key implementation:
+```python
+self.status_timer = QtCore.QTimer()
+self.status_timer.timeout.connect(self.show_next_tip)
+self.status_timer.start(12000)  # 12 second interval
+
+# Status bar events
+self.status_bar.enterEvent = lambda e: self.status_timer.stop()
+self.status_bar.leaveEvent = lambda e: self.status_timer.start(12000)
+```
+
+Tips array stored in `self.tips` list with 40+ entries covering:
+- Layer management workflows
+- Keyboard shortcuts
+- Drag-and-drop techniques
+- Context menu features
+- Visibility and isolation tips
+
 ## Development Workflow
 
 ### Git Branching Strategy
 
 - **main**: Stable releases with version tags
-- **Feature branches**: Named descriptively (e.g., `Objects-Tasks`)
-  - Current active branch: `Objects-Tasks` (for object management and task-related features)
+- **Feature branches**: Named descriptively (e.g., `Status`)
+  - Current active branch: `Status` (for status bar and tips features)
 - Version tags follow semantic versioning (v0.x.x)
 - Detailed version history available in `docs/Eski-LayerManager-By-Claude-Version-History.txt`
 - When creating PRs, target the `main` branch
@@ -470,10 +498,13 @@ callbacks.show()
 - ✓ Context menus for layers and objects (right-click)
 - ✓ Create/delete/rename layers via context menu
 - ✓ Hide/show/freeze/unfreeze layers
-- ✓ Isolate layer functionality
+- ✓ Isolate layer functionality (Ctrl+Click eye icon)
 - ✓ Position persistence across sessions
 - ✓ Singleton pattern (prevents multiple instances)
 - ✓ Custom tree rendering with inline icons
+- ✓ Status bar with cycling tips and tricks
+- ✓ Right-click tips reference window
+- ✓ Hover-to-pause status bar timer
 
 **Planned Features:**
 See `docs/wishlist.txt` for detailed feature specifications and priorities.

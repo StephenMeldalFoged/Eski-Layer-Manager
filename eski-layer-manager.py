@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.20.6
+Version: 0.23.6
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,8 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.20.6"
+VERSION = "0.23.6"
+VERSION_DISPLAY_DURATION = 10000  # Show version for 10 seconds before tips
 
 # Module initialization guard - prevents re-initialization on repeated imports
 if '_ESKI_LAYER_MANAGER_INITIALIZED' not in globals():
@@ -110,6 +111,9 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
         # Calculate visual row number (counting all visible rows from top)
         visual_row = self._get_visual_row_number(index, tree_widget)
 
+        # Check if this item is being hovered
+        is_hovered = (hasattr(tree_widget, '_hovered_item') and tree_widget._hovered_item == item)
+
         # Check if item has custom background (e.g., drag highlight)
         custom_bg = item.background(0)
         if custom_bg.color().alpha() > 0:
@@ -117,6 +121,7 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
             painter.fillRect(option.rect, custom_bg)
         else:
             # Draw background (alternating rows) - NO full row selection highlight
+            # NOTE: Hover highlight will be drawn LATER, after active layer highlight
             if visual_row % 2:
                 painter.fillRect(option.rect, option.palette.alternateBase())
             else:
@@ -134,6 +139,25 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
 
         # Store the current item rect Y position for coordinate reference (store value, not QRect object)
         item.current_item_y = option.rect.y()
+
+        # Check if this item is selected (active layer) - draw highlight EARLY, before everything
+        is_selected = option.state & QtWidgets.QStyle.State_Selected
+        if is_selected:
+            # Draw active layer highlight UNDER everything (after background, before icons/text)
+            # This ensures the text remains readable and not affected by transparency
+            print(f"[DEBUG] Drawing active layer highlight EARLY for: {item.text(0)}")
+            # Full row highlight from left edge to right edge
+            highlight_rect = QtCore.QRect(option.rect.left(), y, option.rect.width(), h)
+            highlight_color = QtGui.QColor(0, 100, 100, 120)  # Darker teal with alpha
+            painter.fillRect(highlight_rect, highlight_color)
+
+        # Draw hover highlight AFTER active layer highlight (so it shows on top)
+        if is_hovered:
+            print(f"[DEBUG] Drawing hover highlight for: {item.text(0)}")
+            # Draw hover overlay on top of everything so far
+            hover_rect = QtCore.QRect(option.rect.left(), y, option.rect.width(), h)
+            hover_color = QtGui.QColor(0, 140, 140, 80)  # Brighter teal with lower alpha so it layers nicely
+            painter.fillRect(hover_rect, hover_color)
 
         # Skip drawing custom arrow - Qt's built-in tree arrows are sufficient
         # (We still store arrow data in UserRole but don't paint it)
@@ -170,31 +194,29 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
                 painter.drawText(add_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, str(add_icon))
             x += self.plus_icon_size + self.icon_spacing
 
-        # 3. Draw layer name with custom highlight if selected
+        # 3. Draw layer name
         layer_name = item.text(0)
 
-        # Calculate text width for tight highlight
+        # Calculate text width
         font_metrics = QtGui.QFontMetrics(option.font)
         text_width = font_metrics.horizontalAdvance(layer_name)
 
-        # Create tight rect just for the text
-        text_rect = QtCore.QRect(x, y, text_width + 8, h)  # +8 for small padding
+        # Create rects for rendering and click detection
         name_rect = QtCore.QRect(x, y, option.rect.right() - x, h)  # Full clickable area
         item.click_regions['name'] = name_rect
 
-        # Draw deep teal highlight behind text if selected
-        if option.state & QtWidgets.QStyle.State_Selected:
-            teal_color = QtGui.QColor(0, 128, 128)  # Deep teal
-            painter.fillRect(text_rect, teal_color)
-            painter.setPen(QtGui.QColor(255, 255, 255))  # White text on teal
-        else:
-            painter.setPen(option.palette.text().color())
+        # Set text color (same for all layers)
+        painter.setPen(option.palette.text().color())
 
         painter.setFont(option.font)
+        # Draw text at the same position
+        text_rect = QtCore.QRect(x, y, text_width + 12, h)
         painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, layer_name)
 
         # 4. Draw green dot indicator if layer contains selected objects (right-aligned)
-        if layer_name in self.layer_manager.layers_with_selection:
+        # Only draw in layer tree, not objects tree
+        if tree_widget == self.layer_manager.layer_tree and layer_name in self.layer_manager.layers_with_selection:
+            print(f"[DEBUG] Drawing green dot for layer: {layer_name}")
             # Green dot size
             dot_size = 6
             dot_margin = 8  # Distance from right edge
@@ -265,6 +287,13 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         # Track highlighted item during drag operations
         self._drag_highlight_item = None
 
+        # Track hovered item for hover highlighting
+        self._hovered_item = None
+
+        # Enable mouse tracking to get mouseMoveEvent without button press
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
+
     def mousePressEvent(self, event):
         """Intercept mouse press - only allow selection when clicking on layer name"""
         item = self.itemAt(event.pos())
@@ -303,6 +332,47 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
 
         # If clicking on name region or anywhere else, allow normal selection
         super(CustomTreeWidget, self).mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Track which item the mouse is hovering over"""
+        item = self.itemAt(event.pos())
+
+        # Only update if hover changed
+        if item != self._hovered_item:
+            old_hovered = self._hovered_item
+            self._hovered_item = item
+
+            # Repaint old hovered item
+            if old_hovered:
+                index = self.indexFromItem(old_hovered)
+                if index.isValid():
+                    rect = self.visualRect(index)
+                    self.viewport().update(rect)
+
+            # Repaint new hovered item
+            if self._hovered_item:
+                index = self.indexFromItem(self._hovered_item)
+                if index.isValid():
+                    rect = self.visualRect(index)
+                    self.viewport().update(rect)
+
+        # Call parent implementation
+        super(CustomTreeWidget, self).mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        """Clear hover highlight when mouse leaves the widget"""
+        if self._hovered_item:
+            old_hovered = self._hovered_item
+            self._hovered_item = None
+
+            # Repaint the item that was hovered
+            index = self.indexFromItem(old_hovered)
+            if index.isValid():
+                rect = self.visualRect(index)
+                self.viewport().update(rect)
+
+        # Call parent implementation
+        super(CustomTreeWidget, self).leaveEvent(event)
 
     def dragEnterEvent(self, event):
         """Accept drag events from external sources (Scene Explorer) and internal sources"""
@@ -587,6 +657,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
     def __init__(self, parent=None):
         super(EskiLayerManager, self).__init__(parent)
 
+        print(f"[DEBUG] ===== Eski Layer Manager v{VERSION} Initializing =====")
+
         # Set window title with version
         self.setWindowTitle(f"Eski LayerManager by Claude {VERSION}")
 
@@ -675,8 +747,10 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.current_tip_index = 0
         self.tip_timer = QtCore.QTimer(self)
         self.tip_timer.timeout.connect(self.rotate_tip)
-        self.tip_timer.start(12000)  # 12 seconds
-        self.rotate_tip()  # Show first tip immediately
+
+        # Show version number first for 10 seconds, then start tips
+        self.status_label.setText(f"Eski Layer Manager v{VERSION}")
+        QtCore.QTimer.singleShot(VERSION_DISPLAY_DURATION, self.start_tip_rotation)
 
     def load_visibility_icons(self):
         """Load native 3ds Max visibility icons using Qt resource system"""
@@ -1393,6 +1467,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
             if current_layer:
                 current_layer_name = str(current_layer.name)
+                print(f"[DEBUG] select_active_layer: Looking for layer '{current_layer_name}'")
 
                 # Recursively find and select the matching item in the tree
                 def find_and_select(parent_item=None):
@@ -1403,6 +1478,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                             # Single column - text(0) is layer name
                             if item.text(0) == current_layer_name:
                                 item.setSelected(True)
+                                print(f"[DEBUG] Found and selected layer: {current_layer_name}")
+                                print(f"[DEBUG] Item isSelected: {item.isSelected()}")
                                 return True
                             # Check children recursively
                             if find_and_select_children(item):
@@ -1415,13 +1492,20 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         # Single column - text(0) is layer name
                         if child.text(0) == current_layer_name:
                             child.setSelected(True)
+                            print(f"[DEBUG] Found and selected child layer: {current_layer_name}")
+                            print(f"[DEBUG] Child isSelected: {child.isSelected()}")
                             return True
                         # Check nested children
                         if find_and_select_children(child):
                             return True
                     return False
 
-                find_and_select()
+                found = find_and_select()
+                if not found:
+                    print(f"[DEBUG] Layer '{current_layer_name}' not found in tree!")
+                else:
+                    # Force viewport repaint to show highlight
+                    self.layer_tree.viewport().update()
 
                 # Populate objects tree with current layer's objects
                 self.populate_objects(current_layer_name)
@@ -2332,9 +2416,14 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         """Setup timer to poll for current layer changes (syncs with native layer manager)"""
         self.sync_timer = QtCore.QTimer(self)
         self.sync_timer.timeout.connect(self.check_current_layer_sync)
-        # Check every 500ms for current layer changes
-        self.sync_timer.start(500)
+        # Check every 5000ms (5 seconds) for current layer changes
+        self.sync_timer.start(5000)
         pass  # Debug print removed
+
+    def start_tip_rotation(self):
+        """Start the tip rotation timer and show first tip"""
+        self.tip_timer.start(12000)  # 12 seconds
+        self.rotate_tip()  # Show first tip immediately
 
     def rotate_tip(self):
         """Rotate to the next tip in the status bar"""
@@ -2481,25 +2570,59 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         try:
             # Get currently selected objects
             selection = rt.selection
+            selection_array = rt.getCurrentSelection()
+            print(f"[DEBUG] rt.selection type: {type(selection)}, value: {selection}")
+            print(f"[DEBUG] rt.getCurrentSelection() count: {len(selection_array) if selection_array else 0}")
+            print(f"[DEBUG] update_selection_indicators called, selection count: {len(selection)}")
+
+            # Try alternative selection methods
+            if len(selection) == 0:
+                # Try getting selection as array
+                sel_count = rt.execute("selection.count")
+                print(f"[DEBUG] MAXScript selection.count: {sel_count}")
+                if sel_count > 0:
+                    print(f"[DEBUG] Objects are selected but rt.selection is empty!")
 
             # Build set of layer names that contain selected objects
             new_layers_with_selection = set()
+            layer_manager = rt.layerManager
+            print(f"[DEBUG] Layer manager: {layer_manager}, count: {layer_manager.count}")
+
+            # For each selected object, find which layer it belongs to
+            print(f"[DEBUG] Starting to iterate through {len(selection)} selected objects")
             for obj in selection:
+                print(f"[DEBUG] Processing object: {obj}")
                 try:
-                    if hasattr(obj, 'layer') and obj.layer:
-                        layer_name = str(obj.layer.name)
+                    # Direct approach: get the layer property from the object
+                    obj_layer = obj.layer
+                    if obj_layer:
+                        layer_name = str(obj_layer.name)
                         new_layers_with_selection.add(layer_name)
-                except:
-                    pass
+                        print(f"[DEBUG] Object {obj.name} is on layer: {layer_name}")
+                    else:
+                        print(f"[DEBUG] Object {obj.name} has no layer")
+
+                except Exception as e2:
+                    print(f"[DEBUG] Error getting layer for object {obj.name}: {e2}")
+                    import traceback
+                    traceback.print_exc()
+
+            print(f"[DEBUG] new_layers_with_selection: {new_layers_with_selection}")
+            print(f"[DEBUG] old layers_with_selection: {self.layers_with_selection}")
 
             # Only update if the set changed
             if new_layers_with_selection != self.layers_with_selection:
                 self.layers_with_selection = new_layers_with_selection
+                print(f"[DEBUG] Selection indicators updated: {self.layers_with_selection}")
                 # Trigger repaint of the entire tree to update indicators
                 self.layer_tree.viewport().update()
+            else:
+                print(f"[DEBUG] No change in selection indicators")
 
         except Exception as e:
-            pass  # Silently fail
+            print(f"[DEBUG] Exception in update_selection_indicators: {e}")
+            import traceback
+            traceback.print_exc()
 
     def setup_callbacks(self):
         """Setup 3ds Max callbacks for automatic layer refresh"""
@@ -2522,6 +2645,11 @@ fn EskiLayerManagerCurrentCallback = (
 global EskiLayerManagerSceneCallback
 fn EskiLayerManagerSceneCallback = (
     python.Execute "import eski_layer_manager; eski_layer_manager.refresh_on_scene_change()"
+)
+
+global EskiLayerManagerSelectionCallback
+fn EskiLayerManagerSelectionCallback = (
+    python.Execute "import eski_layer_manager; eski_layer_manager.update_selection_from_callback()"
 )
 """
             rt.execute(callback_code)
@@ -2547,6 +2675,9 @@ fn EskiLayerManagerSceneCallback = (
             rt.callbacks.addScript(rt.Name("systemPostReset"), "EskiLayerManagerSceneCallback()")
             rt.callbacks.addScript(rt.Name("systemPostNew"), "EskiLayerManagerSceneCallback()")
             # Note: postMerge callback not supported in 3ds Max 2026
+
+            # Register callback for selection changes (update green dot indicators)
+            rt.callbacks.addScript(rt.Name("selectionSetChanged"), "EskiLayerManagerSelectionCallback()")
 
             pass  # Debug print removed
         except Exception as e:
@@ -2821,6 +2952,24 @@ def sync_current_layer():
             _layer_manager_instance[0].isVisible()
             # Update selection to match current layer
             _layer_manager_instance[0].select_active_layer()
+        except (RuntimeError, AttributeError):
+            # Widget was deleted
+            _layer_manager_instance[0] = None
+
+
+def update_selection_from_callback():
+    """
+    Called by selectionSetChanged callback when the user selects/deselects objects
+    Updates the green dot indicators without full refresh
+    """
+    global _layer_manager_instance
+
+    if _layer_manager_instance[0] is not None:
+        try:
+            # Check if widget is still valid
+            _layer_manager_instance[0].isVisible()
+            # Update selection indicators (green dots)
+            _layer_manager_instance[0].update_selection_indicators()
         except (RuntimeError, AttributeError):
             # Widget was deleted
             _layer_manager_instance[0] = None
