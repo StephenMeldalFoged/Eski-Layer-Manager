@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.23.8
+Version: 0.23.9
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.23.8"
+VERSION = "0.23.9"
 VERSION_DISPLAY_DURATION = 10000  # Show version for 10 seconds before tips
 
 # Module initialization guard - prevents re-initialization on repeated imports
@@ -112,7 +112,15 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
         visual_row = self._get_visual_row_number(index, tree_widget)
 
         # Check if this item is being hovered
-        is_hovered = (hasattr(tree_widget, '_hovered_item') and tree_widget._hovered_item == item)
+        # Safely check if hovered item is still valid (not deleted)
+        is_hovered = False
+        if hasattr(tree_widget, '_hovered_item') and tree_widget._hovered_item is not None:
+            try:
+                # Try to access the item - will raise RuntimeError if deleted
+                is_hovered = (tree_widget._hovered_item == item)
+            except RuntimeError:
+                # Item was deleted, clear the reference
+                tree_widget._hovered_item = None
 
         # Check if item has custom background (e.g., drag highlight)
         custom_bg = item.background(0)
@@ -339,12 +347,16 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
             old_hovered = self._hovered_item
             self._hovered_item = item
 
-            # Repaint old hovered item
+            # Repaint old hovered item (if still valid)
             if old_hovered:
-                index = self.indexFromItem(old_hovered)
-                if index.isValid():
-                    rect = self.visualRect(index)
-                    self.viewport().update(rect)
+                try:
+                    index = self.indexFromItem(old_hovered)
+                    if index.isValid():
+                        rect = self.visualRect(index)
+                        self.viewport().update(rect)
+                except RuntimeError:
+                    # Old item was deleted, ignore
+                    pass
 
             # Repaint new hovered item
             if self._hovered_item:
@@ -362,11 +374,15 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
             old_hovered = self._hovered_item
             self._hovered_item = None
 
-            # Repaint the item that was hovered
-            index = self.indexFromItem(old_hovered)
-            if index.isValid():
-                rect = self.visualRect(index)
-                self.viewport().update(rect)
+            # Repaint the item that was hovered (if still valid)
+            try:
+                index = self.indexFromItem(old_hovered)
+                if index.isValid():
+                    rect = self.visualRect(index)
+                    self.viewport().update(rect)
+            except RuntimeError:
+                # Item was already deleted, ignore
+                pass
 
         # Call parent implementation
         super(CustomTreeWidget, self).leaveEvent(event)
