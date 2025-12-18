@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.23.7
+Version: 0.23.8
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.23.7"
+VERSION = "0.23.8"
 VERSION_DISPLAY_DURATION = 10000  # Show version for 10 seconds before tips
 
 # Module initialization guard - prevents re-initialization on repeated imports
@@ -145,7 +145,6 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
         if is_selected:
             # Draw active layer highlight UNDER everything (after background, before icons/text)
             # This ensures the text remains readable and not affected by transparency
-            print(f"[DEBUG] Drawing active layer highlight EARLY for: {item.text(0)}")
             # Full row highlight from left edge to right edge
             highlight_rect = QtCore.QRect(option.rect.left(), y, option.rect.width(), h)
             highlight_color = QtGui.QColor(0, 100, 100, 120)  # Darker teal with alpha
@@ -153,7 +152,6 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
 
         # Draw hover highlight AFTER active layer highlight (so it shows on top)
         if is_hovered:
-            print(f"[DEBUG] Drawing hover highlight for: {item.text(0)}")
             # Draw hover overlay on top of everything so far
             hover_rect = QtCore.QRect(option.rect.left(), y, option.rect.width(), h)
             hover_color = QtGui.QColor(0, 140, 140, 80)  # Brighter teal with lower alpha so it layers nicely
@@ -216,7 +214,6 @@ class InlineIconDelegate(QtWidgets.QStyledItemDelegate):
         # 4. Draw green dot indicator if layer contains selected objects (right-aligned)
         # Only draw in layer tree, not objects tree
         if tree_widget == self.layer_manager.layer_tree and layer_name in self.layer_manager.layers_with_selection:
-            print(f"[DEBUG] Drawing green dot for layer: {layer_name}")
             # Green dot size
             dot_size = 6
             dot_margin = 8  # Distance from right edge
@@ -656,8 +653,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
     def __init__(self, parent=None):
         super(EskiLayerManager, self).__init__(parent)
-
-        print(f"[DEBUG] ===== Eski Layer Manager v{VERSION} Initializing =====")
 
         # Set window title with version
         self.setWindowTitle(f"Eski LayerManager by Claude {VERSION}")
@@ -1467,7 +1462,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
 
             if current_layer:
                 current_layer_name = str(current_layer.name)
-                print(f"[DEBUG] select_active_layer: Looking for layer '{current_layer_name}'")
 
                 # Recursively find and select the matching item in the tree
                 def find_and_select(parent_item=None):
@@ -1478,8 +1472,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                             # Single column - text(0) is layer name
                             if item.text(0) == current_layer_name:
                                 item.setSelected(True)
-                                print(f"[DEBUG] Found and selected layer: {current_layer_name}")
-                                print(f"[DEBUG] Item isSelected: {item.isSelected()}")
                                 return True
                             # Check children recursively
                             if find_and_select_children(item):
@@ -1492,8 +1484,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         # Single column - text(0) is layer name
                         if child.text(0) == current_layer_name:
                             child.setSelected(True)
-                            print(f"[DEBUG] Found and selected child layer: {current_layer_name}")
-                            print(f"[DEBUG] Child isSelected: {child.isSelected()}")
                             return True
                         # Check nested children
                         if find_and_select_children(child):
@@ -1501,9 +1491,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     return False
 
                 found = find_and_select()
-                if not found:
-                    print(f"[DEBUG] Layer '{current_layer_name}' not found in tree!")
-                else:
+                if found:
                     # Force viewport repaint to show highlight
                     self.layer_tree.viewport().update()
 
@@ -2570,59 +2558,29 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         try:
             # Get currently selected objects
             selection = rt.selection
-            selection_array = rt.getCurrentSelection()
-            print(f"[DEBUG] rt.selection type: {type(selection)}, value: {selection}")
-            print(f"[DEBUG] rt.getCurrentSelection() count: {len(selection_array) if selection_array else 0}")
-            print(f"[DEBUG] update_selection_indicators called, selection count: {len(selection)}")
-
-            # Try alternative selection methods
-            if len(selection) == 0:
-                # Try getting selection as array
-                sel_count = rt.execute("selection.count")
-                print(f"[DEBUG] MAXScript selection.count: {sel_count}")
-                if sel_count > 0:
-                    print(f"[DEBUG] Objects are selected but rt.selection is empty!")
 
             # Build set of layer names that contain selected objects
             new_layers_with_selection = set()
-            layer_manager = rt.layerManager
-            print(f"[DEBUG] Layer manager: {layer_manager}, count: {layer_manager.count}")
 
             # For each selected object, find which layer it belongs to
-            print(f"[DEBUG] Starting to iterate through {len(selection)} selected objects")
             for obj in selection:
-                print(f"[DEBUG] Processing object: {obj}")
                 try:
                     # Direct approach: get the layer property from the object
                     obj_layer = obj.layer
                     if obj_layer:
                         layer_name = str(obj_layer.name)
                         new_layers_with_selection.add(layer_name)
-                        print(f"[DEBUG] Object {obj.name} is on layer: {layer_name}")
-                    else:
-                        print(f"[DEBUG] Object {obj.name} has no layer")
-
-                except Exception as e2:
-                    print(f"[DEBUG] Error getting layer for object {obj.name}: {e2}")
-                    import traceback
-                    traceback.print_exc()
-
-            print(f"[DEBUG] new_layers_with_selection: {new_layers_with_selection}")
-            print(f"[DEBUG] old layers_with_selection: {self.layers_with_selection}")
+                except:
+                    pass  # Silently skip objects without layers
 
             # Only update if the set changed
             if new_layers_with_selection != self.layers_with_selection:
                 self.layers_with_selection = new_layers_with_selection
-                print(f"[DEBUG] Selection indicators updated: {self.layers_with_selection}")
                 # Trigger repaint of the entire tree to update indicators
                 self.layer_tree.viewport().update()
-            else:
-                print(f"[DEBUG] No change in selection indicators")
 
-        except Exception as e:
-            print(f"[DEBUG] Exception in update_selection_indicators: {e}")
-            import traceback
-            traceback.print_exc()
+        except:
+            pass  # Silently fail
 
     def setup_callbacks(self):
         """Setup 3ds Max callbacks for automatic layer refresh"""
