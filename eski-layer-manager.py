@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.23.9
+Version: 0.24.0
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
