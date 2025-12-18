@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.23.9"
+VERSION = "0.24.0"
 VERSION_DISPLAY_DURATION = 10000  # Show version for 10 seconds before tips
 
 # Module initialization guard - prevents re-initialization on repeated imports
@@ -804,8 +804,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                                 pass
 
                             self.use_native_icons = True
-                            pass  # Debug print removed
-                            pass  # Debug print removed
                             return
                         else:
                             pass  # Debug print removed
@@ -1328,7 +1326,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             if parent_item:
                 try:
                     parent_layer = layer.getParent()
-                    if parent_layer and str(parent_layer) != "undefined":
+                    # Check if parent exists (not rt.undefined)
+                    if parent_layer != rt.undefined and parent_layer is not None:
                         parent_hidden = parent_layer.ishidden
                 except:
                     pass
@@ -1628,7 +1627,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 parent_hidden = False
                 try:
                     parent_layer = layer.getParent()
-                    if parent_layer and str(parent_layer) != "undefined":
+                    if parent_layer != rt.undefined and parent_layer is not None:
                         parent_hidden = parent_layer.ishidden
                     else:
                         parent_hidden = False  # No parent
@@ -1674,6 +1673,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 # Trigger repaint
                 self.layer_tree.update(self.layer_tree.indexFromItem(item))
 
+                # If this layer has children, update their icons too (they inherit hidden state)
+                self._update_child_layer_icons(item, new_hidden_state)
+
                 self.progress_bar.setValue(85)
 
                 # Force complete viewport refresh to show/hide objects immediately
@@ -1690,6 +1692,48 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             import traceback
             error_msg = f"Error toggling layer visibility: {str(e)}\n{traceback.format_exc()}"
             print(f"[ERROR] {error_msg}")
+
+    def _update_child_layer_icons(self, parent_item, parent_is_hidden):
+        """Recursively update icons for all child layers when parent visibility changes"""
+        if not parent_item:
+            return
+
+        # Iterate through all children
+        for i in range(parent_item.childCount()):
+            child_item = parent_item.child(i)
+            child_layer_name = child_item.text(0)
+
+            try:
+                # Get the actual layer from 3ds Max
+                child_layer = self._find_layer_by_name(child_layer_name)
+                if not child_layer:
+                    continue
+
+                # Determine which icon to use
+                if parent_is_hidden:
+                    # Parent is hidden - use lock/disabled icon
+                    if self.use_native_icons and self.icon_hidden_light:
+                        child_item.setData(0, QtCore.Qt.UserRole + 1, self.icon_hidden_light)
+                    else:
+                        child_item.setData(0, QtCore.Qt.UserRole + 1, "🔒")
+                else:
+                    # Parent is visible - show child's own visibility state
+                    child_is_hidden = child_layer.ishidden
+                    if self.use_native_icons:
+                        icon = self.icon_hidden if child_is_hidden else self.icon_visible
+                        child_item.setData(0, QtCore.Qt.UserRole + 1, icon)
+                    else:
+                        icon_text = "✖" if child_is_hidden else "👁"
+                        child_item.setData(0, QtCore.Qt.UserRole + 1, icon_text)
+
+                # Trigger repaint
+                self.layer_tree.update(self.layer_tree.indexFromItem(child_item))
+
+                # Recursively update grandchildren
+                self._update_child_layer_icons(child_item, parent_is_hidden)
+
+            except Exception as e:
+                print(f"[ERROR] Failed to update child icon for '{child_layer_name}': {e}")
 
     def _find_layer_by_name(self, layer_name):
         """Recursively search for a layer by name in the entire layer hierarchy"""
@@ -2507,12 +2551,37 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         for i in range(parent_item.childCount()):
             item = parent_item.child(i)
             if item.text(0) == layer_name:  # Single column - layer name in column 0
-                # Update icon in UserRole+1
-                if self.use_native_icons:
-                    item.setData(0, QtCore.Qt.UserRole + 1, self.icon_hidden if is_hidden else self.icon_visible)
+                # Check if this layer's parent is hidden
+                parent_is_hidden = False
+                parent_tree_item = item.parent()
+
+                # If this item has a parent in the tree (not root), check if parent layer is hidden
+                if parent_tree_item and parent_tree_item != self.layer_tree.invisibleRootItem():
+                    try:
+                        # Get the layer from 3ds Max
+                        layer = self._find_layer_by_name(layer_name)
+                        if layer:
+                            parent_layer = layer.getParent()
+                            if parent_layer != rt.undefined and parent_layer is not None:
+                                parent_is_hidden = parent_layer.ishidden
+                    except:
+                        pass
+
+                # Update icon based on parent state
+                if parent_is_hidden:
+                    # Parent is hidden - use lock/disabled icon
+                    if self.use_native_icons and self.icon_hidden_light:
+                        item.setData(0, QtCore.Qt.UserRole + 1, self.icon_hidden_light)
+                    else:
+                        item.setData(0, QtCore.Qt.UserRole + 1, "🔒")
                 else:
-                    new_icon_text = "✖" if is_hidden else "👁"
-                    item.setData(0, QtCore.Qt.UserRole + 1, new_icon_text)
+                    # Parent is visible - use normal icon based on layer's own state
+                    if self.use_native_icons:
+                        item.setData(0, QtCore.Qt.UserRole + 1, self.icon_hidden if is_hidden else self.icon_visible)
+                    else:
+                        new_icon_text = "✖" if is_hidden else "👁"
+                        item.setData(0, QtCore.Qt.UserRole + 1, new_icon_text)
+
                 # Trigger repaint
                 self.layer_tree.update(self.layer_tree.indexFromItem(item))
                 return True
