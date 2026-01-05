@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.2.5 (2026-01-05 15:15)
+Version: 0.2.6 (2026-01-05 15:18)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.2.5 (2026-01-05 15:15)"
+VERSION = "0.2.6 (2026-01-05 15:18)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -238,10 +238,20 @@ class EskiExporterDialog(QtWidgets.QDialog):
     def browse_folder(self):
         """Open folder browser for FBX export location using 3ds Max native dialog"""
         if rt:
-            # Use 3ds Max native folder dialog
-            folder_path = rt.getSavePath(
-                caption="Select Export Folder for FBX Files"
+            # Use 3ds Max file dialog (has history dropdown) and extract folder
+            file_path = rt.getSaveFileName(
+                caption="Select Export Folder (filename will be ignored)",
+                filename="export.fbx",
+                types="FBX Files (*.fbx)|*.fbx"
             )
+
+            # Extract folder from the selected file path
+            if file_path and str(file_path) != "undefined":
+                file_path = str(file_path)
+                # Get the directory part only
+                import os
+                folder_path = os.path.dirname(file_path)
+                self.file_path_edit.setText(folder_path)
         else:
             # Fallback to Qt dialog for standalone testing
             folder_path = QtWidgets.QFileDialog.getExistingDirectory(
@@ -250,10 +260,8 @@ class EskiExporterDialog(QtWidgets.QDialog):
                 ""
             )
 
-        # Check if folder_path is valid (not None/undefined)
-        if folder_path and str(folder_path) != "undefined":
-            folder_path = str(folder_path)
-            self.file_path_edit.setText(folder_path)
+            if folder_path:
+                self.file_path_edit.setText(folder_path)
 
     def populate_layers(self):
         """Populate the layers tree from 3ds Max"""
