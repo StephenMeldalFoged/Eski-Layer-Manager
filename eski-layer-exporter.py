@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.4.6 (2026-01-05 16:59)
+Version: 0.7.1 (2026-01-05 20:05)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.4.6 (2026-01-05 16:59)"
+VERSION = "0.7.1 (2026-01-05 20:05)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -358,14 +358,58 @@ class EskiExporterDialog(QtWidgets.QDialog):
         self.save_settings()
 
     def update_layer_highlighting(self):
-        """Update green highlighting for checked layers and their children"""
+        """Update green highlighting for checked layers with adaptive gradient based on actual depth"""
+        def get_item_depth(item):
+            """Calculate depth of item in tree (0 = top-level)"""
+            depth = 0
+            parent = item.parent()
+            while parent:
+                depth += 1
+                parent = parent.parent()
+            return depth
+
+        def find_max_depth(item):
+            """Recursively find maximum depth in tree"""
+            max_depth = get_item_depth(item)
+            for i in range(item.childCount()):
+                child_max = find_max_depth(item.child(i))
+                max_depth = max(max_depth, child_max)
+            return max_depth
+
+        def get_color_for_depth(depth, max_depth):
+            """Calculate color based on depth - darker and less saturated as we go deeper"""
+            # Start color (top-level): darker green (60, 120, 60)
+            # End color (deepest level): very desaturated dark gray (35, 45, 35)
+            start_r, start_g, start_b = 60, 120, 60
+            end_r, end_g, end_b = 35, 45, 35
+
+            # If max_depth is 0 (only top-level items), use start color
+            if max_depth == 0:
+                return QtGui.QColor(start_r, start_g, start_b)
+
+            # Linear interpolation from start to end based on depth relative to max_depth
+            t = depth / float(max_depth)  # Normalized position (0.0 to 1.0)
+            r = int(start_r + (end_r - start_r) * t)
+            g = int(start_g + (end_g - start_g) * t)
+            b = int(start_b + (end_b - start_b) * t)
+
+            return QtGui.QColor(r, g, b)
+
+        # First pass: find maximum depth in the entire tree
+        max_depth = 0
+        for i in range(self.layers_tree.topLevelItemCount()):
+            item_max = find_max_depth(self.layers_tree.topLevelItem(i))
+            max_depth = max(max_depth, item_max)
+
+        # Second pass: apply colors based on adaptive gradient
         def update_item_highlight(item):
             is_checked = item.checkState(0) == QtCore.Qt.Checked
             is_parent_checked = self.is_parent_checked(item)
 
-            # Apply green background if checked or parent is checked
+            # Apply background if checked or parent is checked
             if is_checked or is_parent_checked:
-                item.setBackground(0, QtGui.QColor(144, 238, 144))  # Light green
+                depth = get_item_depth(item)
+                item.setBackground(0, get_color_for_depth(depth, max_depth))
             else:
                 item.setBackground(0, QtGui.QColor(0, 0, 0, 0))  # Transparent
 
@@ -420,10 +464,22 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
             # Save to file properties
             settings_json = json.dumps(settings)
-            rt.fileProperties.addProperty(rt.Name("custom"), rt.Name("EskiExporterSettings"), settings_json)
+
+            # Delete old property if it exists
+            try:
+                rt.fileProperties.deleteProperty(rt.Name("custom"), rt.Name("EskiExporterSettings"))
+            except:
+                pass  # Property doesn't exist yet
+
+            # Add new property - use rt.execute to ensure proper MAXScript string handling
+            escaped_json = settings_json.replace("\\", "\\\\").replace('"', '\\"')
+            maxscript_cmd = f'fileProperties.addProperty #custom #EskiExporterSettings "{escaped_json}"'
+            rt.execute(maxscript_cmd)
 
         except Exception as e:
             print(f"[Exporter] Error saving settings: {e}")
+            import traceback
+            traceback.print_exc()
 
     def load_settings(self):
         """Load exporter settings from the 3ds Max file"""
@@ -436,52 +492,73 @@ class EskiExporterDialog(QtWidgets.QDialog):
             import json
 
             # Try to load settings from file properties
-            settings_json = rt.fileProperties.findProperty(rt.Name("custom"), rt.Name("EskiExporterSettings"))
+            # findProperty returns the index, we need getPropertyValue to get the actual value
+            prop_index = rt.fileProperties.findProperty(rt.Name("custom"), rt.Name("EskiExporterSettings"))
 
-            if settings_json and str(settings_json) != "undefined":
-                settings = json.loads(str(settings_json))
-                settings_found = True
+            if prop_index and str(prop_index) != "undefined" and prop_index != 0:
+                # Get the actual value using the index
+                settings_json = rt.fileProperties.getPropertyValue(rt.Name("custom"), prop_index)
+                settings_str = str(settings_json)
 
-                # Restore export folder
-                if settings.get('export_folder'):
-                    self.file_path_edit.setText(settings['export_folder'])
+                settings = json.loads(settings_str)
 
-                # Restore checked layers (will be applied after layers are populated)
-                self.saved_checked_layers = set(settings.get('checked_layers', []))
+                # Ensure settings is a dictionary
+                if isinstance(settings, dict):
+                    settings_found = True
 
-                # Restore animation clips
-                for clip_data in settings.get('animation_clips', []):
-                    row = self.clips_table.rowCount()
-                    self.clips_table.insertRow(row)
+                    # Restore export folder
+                    if settings.get('export_folder'):
+                        self.file_path_edit.setText(settings['export_folder'])
 
-                    # Checkbox
-                    checkbox = QtWidgets.QCheckBox()
-                    checkbox.setChecked(clip_data.get('export', True))
-                    checkbox_widget = QtWidgets.QWidget()
-                    checkbox_layout = QtWidgets.QHBoxLayout(checkbox_widget)
-                    checkbox_layout.addWidget(checkbox)
-                    checkbox_layout.setAlignment(QtCore.Qt.AlignCenter)
-                    checkbox_layout.setContentsMargins(0, 0, 0, 0)
-                    self.clips_table.setCellWidget(row, 0, checkbox_widget)
+                    # Restore checked layers (will be applied after layers are populated)
+                    self.saved_checked_layers = set(settings.get('checked_layers', []))
 
-                    # Clip name
-                    name_item = QtWidgets.QTableWidgetItem(clip_data.get('name', ''))
-                    self.clips_table.setItem(row, 1, name_item)
+                    # Apply check states immediately to currently populated layers
+                    self.layers_tree.blockSignals(True)
+                    for i in range(self.layers_tree.topLevelItemCount()):
+                        item = self.layers_tree.topLevelItem(i)
+                        layer_name = item.data(0, QtCore.Qt.UserRole)
+                        if layer_name in self.saved_checked_layers:
+                            item.setCheckState(0, QtCore.Qt.Checked)
+                    self.layers_tree.blockSignals(False)
+                    self.update_layer_highlighting()  # Update green highlighting
+                    self.saved_checked_layers = set()  # Clear after applying
 
-                    # Start frame
-                    start_item = QtWidgets.QTableWidgetItem(clip_data.get('start', '0'))
-                    self.clips_table.setItem(row, 2, start_item)
+                    # Restore animation clips
+                    self.clips_table.blockSignals(True)
+                    for clip_data in settings.get('animation_clips', []):
+                        row = self.clips_table.rowCount()
+                        self.clips_table.insertRow(row)
 
-                    # End frame
-                    end_item = QtWidgets.QTableWidgetItem(clip_data.get('end', '100'))
-                    self.clips_table.setItem(row, 3, end_item)
+                        # Checkbox
+                        checkbox = QtWidgets.QCheckBox()
+                        checkbox.setChecked(clip_data.get('export', True))
+                        checkbox_widget = QtWidgets.QWidget()
+                        checkbox_layout = QtWidgets.QHBoxLayout(checkbox_widget)
+                        checkbox_layout.addWidget(checkbox)
+                        checkbox_layout.setAlignment(QtCore.Qt.AlignCenter)
+                        checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                        self.clips_table.setCellWidget(row, 0, checkbox_widget)
+
+                        # Clip name
+                        name_item = QtWidgets.QTableWidgetItem(clip_data.get('name', ''))
+                        self.clips_table.setItem(row, 1, name_item)
+
+                        # Start frame
+                        start_item = QtWidgets.QTableWidgetItem(clip_data.get('start', '0'))
+                        self.clips_table.setItem(row, 2, start_item)
+
+                        # End frame
+                        end_item = QtWidgets.QTableWidgetItem(clip_data.get('end', '100'))
+                        self.clips_table.setItem(row, 3, end_item)
+
+                    self.clips_table.blockSignals(False)
 
         except Exception as e:
             print(f"[Exporter] Error loading settings: {e}")
 
         # If no settings found, this is a new/reset scene - clear everything
         if not settings_found:
-            print("[Exporter] No settings found - clearing UI for new/reset scene")
             # Block signals to prevent auto-save
             self.layers_tree.blockSignals(True)
             self.clips_table.blockSignals(True)
@@ -562,17 +639,193 @@ class EskiExporterDialog(QtWidgets.QDialog):
             )
             return
 
-        # TODO: Implement actual export logic
-        self.status_label.setText("Exporting... (Implementation pending)")
-        QtWidgets.QApplication.processEvents()
+        if not rt:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No 3ds Max",
+                "FBX export requires 3ds Max."
+            )
+            return
 
-        # Placeholder success message
-        QtWidgets.QMessageBox.information(
-            self,
-            "Export Ready",
-            f"Export functionality will be implemented next.\nTarget folder: {folder_path}\n\nFiles will be named based on layer names."
-        )
-        self.status_label.setText("Ready to export")
+        # Get all checked layers
+        checked_layers = []
+        for i in range(self.layers_tree.topLevelItemCount()):
+            item = self.layers_tree.topLevelItem(i)
+            if item.checkState(0) == QtCore.Qt.Checked:
+                layer_name = item.data(0, QtCore.Qt.UserRole)
+                checked_layers.append(layer_name)
+
+        if not checked_layers:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Layers Selected",
+                "Please check at least one layer to export."
+            )
+            return
+
+        # Verify folder exists
+        import os
+        if not os.path.exists(folder_path):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Folder Not Found",
+                f"The folder does not exist:\n{folder_path}"
+            )
+            return
+
+        # Export each checked layer
+        exported_files = []
+        errors = []
+
+        for layer_name in checked_layers:
+            try:
+                self.status_label.setText(f"Exporting {layer_name}...")
+                QtWidgets.QApplication.processEvents()
+
+                print(f"[Exporter] Starting export for layer: {layer_name}")
+
+                # Get the layer object
+                layer = rt.layerManager.getLayerFromName(layer_name)
+                if not layer:
+                    errors.append(f"{layer_name}: Layer not found")
+                    print(f"[Exporter] Layer not found: {layer_name}")
+                    continue
+
+                print(f"[Exporter] Layer found: {layer_name}")
+
+                # Collect all objects in this layer and its children
+                try:
+                    objects_to_export = self.get_layer_objects_recursive(layer)
+                    print(f"[Exporter] Found {len(objects_to_export)} objects to export")
+                except Exception as e:
+                    errors.append(f"{layer_name}: Error collecting objects - {str(e)}")
+                    print(f"[Exporter] Error collecting objects: {e}")
+                    continue
+
+                if not objects_to_export or len(objects_to_export) == 0:
+                    errors.append(f"{layer_name}: No objects to export")
+                    print(f"[Exporter] No objects to export")
+                    continue
+
+                # Select the objects
+                try:
+                    rt.clearSelection()
+                    rt.select(objects_to_export)
+                    print(f"[Exporter] Objects selected")
+                except Exception as e:
+                    errors.append(f"{layer_name}: Error selecting objects - {str(e)}")
+                    print(f"[Exporter] Error selecting objects: {e}")
+                    continue
+
+                # Build output file path
+                output_file = os.path.join(folder_path, f"{layer_name}.fbx")
+                print(f"[Exporter] Output file: {output_file}")
+
+                # Escape backslashes for MAXScript
+                escaped_path = output_file.replace("\\", "\\\\")
+
+                # Export to FBX using MAXScript command
+                export_cmd = f'exportFile "{escaped_path}" #noPrompt selectedOnly:true using:FBXEXP'
+                print(f"[Exporter] Export command: {export_cmd}")
+
+                try:
+                    result = rt.execute(export_cmd)
+                    print(f"[Exporter] Export result: {result}")
+
+                    if result:
+                        exported_files.append(layer_name)
+                        print(f"[Exporter] Export successful")
+                    else:
+                        errors.append(f"{layer_name}: Export command returned false")
+                        print(f"[Exporter] Export command returned false")
+                except Exception as e:
+                    errors.append(f"{layer_name}: Export command error - {str(e)}")
+                    print(f"[Exporter] Export command exception: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            except Exception as e:
+                errors.append(f"{layer_name}: {str(e)}")
+                print(f"[Exporter] Outer exception: {e}")
+                import traceback
+                traceback.print_exc()
+
+        # Show results
+        if exported_files:
+            if errors:
+                # Show errors if any, but keep it brief
+                self.status_label.setText(f"Exported {len(exported_files)} layer(s) with {len(errors)} error(s)")
+            else:
+                # Silent success - just update status
+                self.status_label.setText(f"Exported {len(exported_files)} layer(s) successfully")
+        else:
+            # Only show dialog if everything failed
+            error_msg = "Export failed:\n\n"
+            error_msg += "\n".join([f"  • {err}" for err in errors])
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Export Failed",
+                error_msg
+            )
+            self.status_label.setText("Export failed")
+
+    def get_layer_objects_recursive(self, layer):
+        """Get all objects in a layer and its children recursively"""
+        objects = []
+
+        # Get layer name for MAXScript query
+        layer_name = layer.name
+
+        # Use MAXScript to collect nodes into an array using a for loop
+        # Escape quotes in layer name
+        escaped_name = layer_name.replace('"', '\\"')
+
+        # Build array by iterating through layer nodes in MAXScript
+        # nodes is a function that requires a class filter argument
+        maxscript_cmd = f'''
+(
+    local theLayer = layerManager.getLayerFromName "{escaped_name}"
+    local result = #()
+    theLayer.nodes &result
+    result
+)
+'''
+
+        try:
+            nodes_array = rt.execute(maxscript_cmd)
+            print(f"[Exporter] Nodes array type: {type(nodes_array)}, str: {str(nodes_array)[:100]}")
+
+            # Convert MAXScript array to Python list
+            if nodes_array and str(nodes_array) != "undefined" and str(nodes_array) != "#()":
+                # Get array count using MAXScript
+                count_cmd = f'''
+(
+    local theLayer = layerManager.getLayerFromName "{escaped_name}"
+    local result = #()
+    theLayer.nodes &result
+    result.count
+)
+'''
+                count = rt.execute(count_cmd)
+                print(f"[Exporter] Found {count} nodes in layer {layer_name}")
+
+                # Iterate through array (pymxs arrays can be iterated with Python for loop)
+                for node in nodes_array:
+                    objects.append(node)
+                    print(f"[Exporter]   - Added node: {node.name}")
+        except Exception as e:
+            print(f"[Exporter] Error getting nodes from layer {layer_name}: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Get objects from child layers
+        num_children = layer.getNumChildren()
+        for i in range(num_children):
+            child_layer = layer.getChild(i + 1)  # MAXScript uses 1-based indexing
+            child_objects = self.get_layer_objects_recursive(child_layer)
+            objects.extend(child_objects)
+
+        return objects
 
     def start_refresh_timer(self):
         """Start timer to check for layer changes"""
@@ -589,14 +842,13 @@ class EskiExporterDialog(QtWidgets.QDialog):
         try:
             # Check if settings still exist in file
             try:
-                settings_json = rt.fileProperties.findProperty(rt.Name("custom"), rt.Name("EskiExporterSettings"))
-                settings_exist = settings_json and str(settings_json) != "undefined"
+                prop_index = rt.fileProperties.findProperty(rt.Name("custom"), rt.Name("EskiExporterSettings"))
+                settings_exist = prop_index and str(prop_index) != "undefined" and prop_index != 0
             except:
                 settings_exist = False
 
             # If we have UI state but no file settings, scene was reset - reload
             if not settings_exist and (self.file_path_edit.text() or self.clips_table.rowCount() > 0):
-                print("[Exporter] Scene reset detected - reloading settings")
                 self.load_settings()
                 self.refresh_layers()
                 return
@@ -679,14 +931,12 @@ class EskiExporterDialog(QtWidgets.QDialog):
                 id=rt.Name("EskiExporterNew")
             )
 
-            # File open callback - reload settings
+            # File open callback - close and reopen window to load fresh settings
             rt.callbacks.addScript(
                 rt.Name("filePostOpen"),
-                "python.execute('import eski_layer_exporter; eski_layer_exporter.reload_settings_from_callback()')",
+                'python.execute("import eski_layer_exporter; eski_layer_exporter.close_on_file_open()")',
                 id=rt.Name("EskiExporterOpen")
             )
-
-            print("[Exporter] Callbacks registered")
         except Exception as e:
             print(f"[Exporter] Error registering callbacks: {e}")
 
@@ -701,14 +951,11 @@ class EskiExporterDialog(QtWidgets.QDialog):
             rt.callbacks.removeScripts(id=rt.Name("EskiExporterReset"))
             rt.callbacks.removeScripts(id=rt.Name("EskiExporterNew"))
             rt.callbacks.removeScripts(id=rt.Name("EskiExporterOpen"))
-            print("[Exporter] Callbacks removed")
         except Exception as e:
             print(f"[Exporter] Error removing callbacks: {e}")
 
     def clear_all_settings(self):
         """Clear all exporter settings"""
-        print("[Exporter] clear_all_settings called")
-
         try:
             # Block signals to prevent auto-save during clear
             self.layers_tree.blockSignals(True)
@@ -716,12 +963,9 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
             # Clear folder path
             self.file_path_edit.clear()
-            self.file_path_edit.setText("")  # Force empty
-            print(f"[Exporter] Folder path cleared, current value: '{self.file_path_edit.text()}'")
 
             # Clear animation clips
             self.clips_table.setRowCount(0)
-            print(f"[Exporter] Clips cleared, count: {self.clips_table.rowCount()}")
 
             # Clear saved checked layers to prevent restore
             self.saved_checked_layers = set()
@@ -731,7 +975,6 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
             # Repopulate layers without preserving any check states
             self.populate_layers()
-            print(f"[Exporter] Layers repopulated, count: {self.layers_tree.topLevelItemCount()}")
 
             # Restore signals
             self.layers_tree.blockSignals(False)
@@ -740,7 +983,6 @@ class EskiExporterDialog(QtWidgets.QDialog):
             # Update status
             self.status_label.setText("Ready to export")
 
-            print("[Exporter] Settings cleared successfully")
         except Exception as e:
             print(f"[Exporter] Error clearing settings: {e}")
             import traceback
@@ -787,16 +1029,19 @@ def clear_settings_from_callback():
             pass
 
 
-def reload_settings_from_callback():
+def close_on_file_open():
     """
     Called by 3ds Max callbacks when file is opened
-    Reloads settings from the file
+    Closes and reopens the exporter window to load fresh settings
     """
     global _exporter_instance
     if _exporter_instance is not None:
         try:
-            _exporter_instance.load_settings()
-            _exporter_instance.refresh_layers()
+            # Close the window
+            _exporter_instance.close()
+
+            # Reopen immediately with fresh settings
+            show_exporter()
         except (RuntimeError, AttributeError):
             pass
 
@@ -826,14 +1071,12 @@ def show_exporter():
             if is_visible:
                 # Window is visible - CLOSE it (toggle off)
                 _exporter_instance.close()
-                print("[Eski Exporter] Closed window")
                 return None
             else:
                 # Window exists but hidden - SHOW it (toggle on)
                 _exporter_instance.show()
                 _exporter_instance.raise_()
                 _exporter_instance.activateWindow()
-                print("[Eski Exporter] Showing existing window")
                 return _exporter_instance
 
         except (RuntimeError, AttributeError):
@@ -851,7 +1094,6 @@ def show_exporter():
     _exporter_instance = EskiExporterDialog(parent)
     _exporter_instance.show()
 
-    print(f"[Eski Exporter] Opened new window - version {VERSION}")
     return _exporter_instance
 
 
