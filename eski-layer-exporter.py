@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.2.8 (2026-01-05 15:25)
+Version: 0.3.0 (2026-01-05 15:30)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.2.8 (2026-01-05 15:25)"
+VERSION = "0.3.0 (2026-01-05 15:30)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -97,7 +97,10 @@ class EskiExporterDialog(QtWidgets.QDialog):
         self.setWindowFlags(QtCore.Qt.Window)
 
         self.animation_clips = []  # List of animation clips
+        self.layer_snapshot = {}  # Track layer names for change detection
         self.setup_ui()
+        self.register_callbacks()
+        self.start_refresh_timer()
 
     def setup_ui(self):
         """Setup the user interface"""
@@ -446,11 +449,120 @@ class EskiExporterDialog(QtWidgets.QDialog):
         )
         self.status_label.setText("Ready to export")
 
+    def start_refresh_timer(self):
+        """Start timer to check for layer changes"""
+        if rt:
+            self.refresh_timer = QtCore.QTimer()
+            self.refresh_timer.timeout.connect(self.check_for_layer_changes)
+            self.refresh_timer.start(500)  # Check every 500ms
+
+    def check_for_layer_changes(self):
+        """Check if layers have changed and refresh if needed"""
+        if not rt:
+            return
+
+        try:
+            layer_manager = rt.layerManager
+            current_snapshot = {}
+
+            # Build current snapshot of all layers
+            for i in range(layer_manager.count):
+                layer = layer_manager.getLayer(i)
+                current_snapshot[i] = layer.name
+
+            # Compare with previous snapshot
+            if current_snapshot != self.layer_snapshot:
+                self.layer_snapshot = current_snapshot
+                self.refresh_layers()
+
+        except Exception as e:
+            print(f"[Exporter] Error checking layer changes: {e}")
+
+    def refresh_layers(self):
+        """Refresh the layer tree while preserving check states"""
+        if not rt:
+            return
+
+        # Save current check states
+        checked_layers = set()
+        for i in range(self.layers_tree.topLevelItemCount()):
+            item = self.layers_tree.topLevelItem(i)
+            if item.checkState(0) == QtCore.Qt.Checked:
+                layer_name = item.data(0, QtCore.Qt.UserRole)
+                checked_layers.add(layer_name)
+
+        # Repopulate layers
+        self.populate_layers()
+
+        # Restore check states
+        for i in range(self.layers_tree.topLevelItemCount()):
+            item = self.layers_tree.topLevelItem(i)
+            layer_name = item.data(0, QtCore.Qt.UserRole)
+            if layer_name in checked_layers:
+                item.setCheckState(0, QtCore.Qt.Checked)
+
+    def register_callbacks(self):
+        """Register 3ds Max callbacks for layer events"""
+        if not rt:
+            return
+
+        try:
+            # Layer created callback
+            rt.callbacks.addScript(
+                rt.Name("layerCreated"),
+                "python.execute('import eski_layer_exporter; eski_layer_exporter.refresh_from_callback()')",
+                id=rt.Name("EskiExporterLayerCreated")
+            )
+
+            # Layer deleted callback
+            rt.callbacks.addScript(
+                rt.Name("layerDeleted"),
+                "python.execute('import eski_layer_exporter; eski_layer_exporter.refresh_from_callback()')",
+                id=rt.Name("EskiExporterLayerDeleted")
+            )
+
+            print("[Exporter] Callbacks registered")
+        except Exception as e:
+            print(f"[Exporter] Error registering callbacks: {e}")
+
+    def remove_callbacks(self):
+        """Remove all registered callbacks"""
+        if not rt:
+            return
+
+        try:
+            rt.callbacks.removeScripts(id=rt.Name("EskiExporterLayerCreated"))
+            rt.callbacks.removeScripts(id=rt.Name("EskiExporterLayerDeleted"))
+            print("[Exporter] Callbacks removed")
+        except Exception as e:
+            print(f"[Exporter] Error removing callbacks: {e}")
+
     def closeEvent(self, event):
         """Handle window close event"""
         global _exporter_instance
+
+        # Stop refresh timer
+        if hasattr(self, 'refresh_timer'):
+            self.refresh_timer.stop()
+
+        # Remove callbacks
+        self.remove_callbacks()
+
         _exporter_instance = None
         event.accept()
+
+
+def refresh_from_callback():
+    """
+    Called by 3ds Max callbacks to refresh the exporter
+    This is a module-level function that callbacks can invoke
+    """
+    global _exporter_instance
+    if _exporter_instance is not None:
+        try:
+            _exporter_instance.refresh_layers()
+        except (RuntimeError, AttributeError):
+            pass
 
 
 def show_exporter():
