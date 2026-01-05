@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.2.0 (2026-01-05 14:50)
+Version: 0.2.1 (2026-01-05 14:55)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,10 +23,63 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.2.0 (2026-01-05 14:50)"
+VERSION = "0.2.1 (2026-01-05 14:55)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
+
+
+class CollapsibleSection(QtWidgets.QWidget):
+    """
+    A collapsible section widget with a clickable header
+    """
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+
+        self.is_collapsed = False
+
+        # Main layout
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Header button
+        self.header_btn = QtWidgets.QPushButton(f"▼ {title}")
+        self.header_btn.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                padding: 8px;
+                background-color: #3a3a3a;
+                border: 1px solid #555;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+            }
+        """)
+        self.header_btn.clicked.connect(self.toggle_collapsed)
+        layout.addWidget(self.header_btn)
+
+        # Content widget (group box)
+        self.content_widget = QtWidgets.QGroupBox()
+        self.content_widget.setStyleSheet("QGroupBox { border: 1px solid #555; margin-top: 0px; }")
+        self.content_layout = QtWidgets.QVBoxLayout(self.content_widget)
+        layout.addWidget(self.content_widget)
+
+        self.title = title
+
+    def toggle_collapsed(self):
+        """Toggle the collapsed state"""
+        self.is_collapsed = not self.is_collapsed
+        self.content_widget.setVisible(not self.is_collapsed)
+
+        # Update arrow
+        arrow = "▶" if self.is_collapsed else "▼"
+        self.header_btn.setText(f"{arrow} {self.title}")
+
+    def get_content_layout(self):
+        """Get the layout to add content to"""
+        return self.content_layout
 
 
 class EskiExporterDialog(QtWidgets.QDialog):
@@ -94,8 +147,8 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
     def create_file_section(self):
         """Create the file selection section"""
-        group = QtWidgets.QGroupBox("Export File")
-        layout = QtWidgets.QVBoxLayout(group)
+        section = CollapsibleSection("Export File")
+        layout = section.get_content_layout()
 
         # File path row
         file_row = QtWidgets.QHBoxLayout()
@@ -111,12 +164,12 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
         layout.addLayout(file_row)
 
-        return group
+        return section
 
     def create_export_options_section(self):
         """Create the layers selection section"""
-        group = QtWidgets.QGroupBox("Layers to Export")
-        layout = QtWidgets.QVBoxLayout(group)
+        section = CollapsibleSection("Layers to Export")
+        layout = section.get_content_layout()
 
         # Info label
         info_label = QtWidgets.QLabel("Check layers to export (includes all sublayers)")
@@ -134,12 +187,12 @@ class EskiExporterDialog(QtWidgets.QDialog):
         # Populate layers
         self.populate_layers()
 
-        return group
+        return section
 
     def create_animation_clips_section(self):
         """Create the animation clips management section"""
-        group = QtWidgets.QGroupBox("Animation Clips")
-        layout = QtWidgets.QVBoxLayout(group)
+        section = CollapsibleSection("Animation Clips")
+        layout = section.get_content_layout()
 
         # Toolbar
         toolbar = QtWidgets.QHBoxLayout()
@@ -175,7 +228,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
         layout.addWidget(self.clips_table)
 
-        return group
+        return section
 
     def browse_file(self):
         """Open file browser for FBX output"""
