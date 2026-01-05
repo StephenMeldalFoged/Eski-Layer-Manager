@@ -26,7 +26,8 @@
       "Bash(tree:*)",
       "Bash(dir /B /S)",
       "Bash(move:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(test:*)"
     ],
     "deny": [],
     "ask": []
