@@ -9,7 +9,7 @@
     fn macrosExist = (
         local macroDir = getDir #userMacros
         local layerMacroFile = macroDir + "\\EskiLayerManager.mcr"
-        local exporterMacroFile = macroDir + "\\EskiExporter.mcr"
+        local exporterMacroFile = macroDir + "\\EskiLayerExporter.mcr"
         return (doesFileExist layerMacroFile) or (doesFileExist exporterMacroFile)
     )
 
@@ -21,7 +21,7 @@
             local macroDir = getDir #userMacros
             local macroFiles = #(
                 macroDir + "\\EskiLayerManager.mcr",
-                macroDir + "\\EskiExporter.mcr"
+                macroDir + "\\EskiLayerExporter.mcr"
             )
 
             for macroFile in macroFiles do (
@@ -222,7 +222,7 @@
     -- Function to install/upgrade the Exporter macro
     fn installExporterMacro = (
         -- Create the macro script code for exporter
-        local macroCode = "macroScript EskiExporter\n"
+        local macroCode = "macroScript EskiLayerExporter\n"
         macroCode += "    category:\"Eski Tools\"\n"
         macroCode += "    buttonText:\"Eski\\nExporter\"\n"
         macroCode += "    toolTip:\"Eski Real-Time Exporter by Claude v" + installerVersion + "\"\n"
@@ -251,7 +251,7 @@
 
         -- Get user macro directory
         local macroDir = getDir #userMacros
-        local macroFile = macroDir + "\\EskiExporter.mcr"
+        local macroFile = macroDir + "\\EskiLayerExporter.mcr"
 
         try (
             -- Write macro file
@@ -353,7 +353,7 @@
             if macrosExist() then (
                 statusText = "STATUS: Macro buttons are currently INSTALLED\n\n"
                 statusText += "Category: Eski Tools\n"
-                statusText += "Buttons: EskiLayerManager, EskiExporter\n"
+                statusText += "Buttons: EskiLayerManager, EskiLayerExporter\n"
                 statusText += "Installed Version: " + installedVersion + "\n"
                 statusText += "Installer Version: " + installerVersion + "\n\n"
 
@@ -449,7 +449,7 @@ if 'eski_layer_manager' in sys.modules:
                         statusText += "  • EskiLayerManager (Layer Manager)\n"
                     )
                     if exporterSuccess then (
-                        statusText += "  • EskiExporter (Real-Time Exporter)\n"
+                        statusText += "  • EskiLayerExporter (Real-Time Exporter)\n"
                     )
                     statusText += "\n"
 
@@ -474,13 +474,13 @@ if 'eski_layer_manager' in sys.modules:
                         statusText += "  • EskiLayerManager (Layer Manager)\n"
                     )
                     if exporterSuccess then (
-                        statusText += "  • EskiExporter (Real-Time Exporter)\n"
+                        statusText += "  • EskiLayerExporter (Real-Time Exporter)\n"
                     )
                     statusText += "\nNEXT STEPS:\n"
                     statusText += "1. Press Y or go to:\n"
                     statusText += "   Customize > Customize User Interface\n"
                     statusText += "2. Select category: 'Eski Tools'\n"
-                    statusText += "3. Drag 'EskiLayerManager' and/or 'EskiExporter'\n"
+                    statusText += "3. Drag 'EskiLayerManager' and/or 'EskiLayerExporter'\n"
                     statusText += "   to any toolbar\n"
                     statusText += "4. Click Save and Close\n\n"
                     statusText += "Then click the button to launch the Layer Manager!\n\n"
