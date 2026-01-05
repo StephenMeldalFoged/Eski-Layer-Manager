@@ -5,25 +5,31 @@
     -- Version of the installer
     local installerVersion = "0.21.0 (2026-01-05)"
 
-    -- Function to check if macro file exists
-    fn macroExists = (
+    -- Function to check if macro files exist
+    fn macrosExist = (
         local macroDir = getDir #userMacros
-        local macroFile = macroDir + "\\EskiLayerManager.mcr"
-        return doesFileExist macroFile
+        local layerMacroFile = macroDir + "\\EskiLayerManager.mcr"
+        local exporterMacroFile = macroDir + "\\EskiExporter.mcr"
+        return (doesFileExist layerMacroFile) or (doesFileExist exporterMacroFile)
     )
 
     -- Function to uninstall existing macros and Python files
     fn uninstallMacro = (
         local success = false
         try (
-            -- Delete macro file
+            -- Delete macro files
             local macroDir = getDir #userMacros
-            local macroFile = macroDir + "\\EskiLayerManager.mcr"
+            local macroFiles = #(
+                macroDir + "\\EskiLayerManager.mcr",
+                macroDir + "\\EskiExporter.mcr"
+            )
 
-            if doesFileExist macroFile then (
-                deleteFile macroFile
-                format "Deleted macro file: %\n" macroFile
-                success = true
+            for macroFile in macroFiles do (
+                if doesFileExist macroFile then (
+                    deleteFile macroFile
+                    format "Deleted macro file: %\n" macroFile
+                    success = true
+                )
             )
 
             -- Delete Python files
@@ -166,8 +172,8 @@
         )
     )
 
-    -- Function to install/upgrade the macro
-    fn installMacro = (
+    -- Function to install/upgrade the Layer Manager macro
+    fn installLayerManagerMacro = (
         -- Create the macro script code
         local macroCode = "macroScript EskiLayerManager\n"
         macroCode += "    category:\"Eski Tools\"\n"
@@ -207,13 +213,69 @@
             format macroCode to:f
             close f
 
-            -- Reload macros
-            macros.load()
+            return true
+        ) catch (
+            return false
+        )
+    )
+
+    -- Function to install/upgrade the Exporter macro
+    fn installExporterMacro = (
+        -- Create the macro script code for exporter
+        local macroCode = "macroScript EskiExporter\n"
+        macroCode += "    category:\"Eski Tools\"\n"
+        macroCode += "    buttonText:\"Eski\\nExporter\"\n"
+        macroCode += "    toolTip:\"Eski Real-Time Exporter by Claude v" + installerVersion + "\"\n"
+        macroCode += "    icon:#(\"Containers\",6)\n"
+        macroCode += "(\n"
+        macroCode += "    -- This macro button launches the Eski Exporter\n"
+        macroCode += "    try (\n"
+        macroCode += "        python.Execute \"import sys\"\n"
+        macroCode += "        python.Execute \"import importlib\"\n"
+        macroCode += "        python.Execute \"import os\"\n"
+        macroCode += "        \n"
+        macroCode += "        -- Add user scripts directory to Python path if not already there\n"
+        macroCode += "        local scriptsDir = getDir #userScripts\n"
+        macroCode += "        python.Execute (\"scripts_dir = r'\" + scriptsDir + \"'\")\n"
+        macroCode += "        python.Execute \"if scripts_dir not in sys.path: sys.path.insert(0, scripts_dir)\"\n"
+        macroCode += "        \n"
+        macroCode += "        -- Import module ONCE (preserves singleton pattern)\n"
+        macroCode += "        python.Execute \"import eski_layer_exporter\"\n"
+        macroCode += "        \n"
+        macroCode += "        -- Show the exporter (singleton pattern ensures only one instance)\n"
+        macroCode += "        python.Execute \"eski_layer_exporter.show_exporter()\"\n"
+        macroCode += "    ) catch (\n"
+        macroCode += "        messageBox \"ERROR: Cannot find eski-layer-exporter.py\\n\\nPlease make sure eski-layer-exporter.py is copied to:\\n\" + (getDir #userScripts) + \"\\n\\nSee README.md for installation instructions.\" title:\"Eski Exporter - File Not Found\"\n"
+        macroCode += "    )\n"
+        macroCode += ")\n"
+
+        -- Get user macro directory
+        local macroDir = getDir #userMacros
+        local macroFile = macroDir + "\\EskiExporter.mcr"
+
+        try (
+            -- Write macro file
+            local f = createFile macroFile
+            format macroCode to:f
+            close f
 
             return true
         ) catch (
             return false
         )
+    )
+
+    -- Function to install both macros
+    fn installMacros = (
+        local layerSuccess = installLayerManagerMacro()
+        local exporterSuccess = installExporterMacro()
+
+        -- Reload macros once after both are created
+        if layerSuccess or exporterSuccess then (
+            macros.load()
+        )
+
+        return #(layerSuccess, exporterSuccess)
     )
 
     -- Function to get installed Python script version
@@ -288,10 +350,10 @@
             local statusText = ""
             local installedVersion = getInstalledVersion()
 
-            if macroExists() then (
-                statusText = "STATUS: Macro button is currently INSTALLED\n\n"
+            if macrosExist() then (
+                statusText = "STATUS: Macro buttons are currently INSTALLED\n\n"
                 statusText += "Category: Eski Tools\n"
-                statusText += "Button Name: EskiLayerManager\n"
+                statusText += "Buttons: EskiLayerManager, EskiExporter\n"
                 statusText += "Installed Version: " + installedVersion + "\n"
                 statusText += "Installer Version: " + installerVersion + "\n\n"
 
@@ -317,7 +379,7 @@
 
         -- Install/Upgrade button
         on btnInstall pressed do (
-            local wasInstalled = macroExists()
+            local wasInstalled = macrosExist()
             local statusText = ""
 
             -- Close any existing Layer Manager window before upgrade
@@ -369,17 +431,27 @@ if 'eski_layer_manager' in sys.modules:
                 statusText += "\n"
             )
 
-            if installMacro() then (
+            local macroResults = installMacros()
+            local layerSuccess = macroResults[1]
+            local exporterSuccess = macroResults[2]
+
+            if layerSuccess or exporterSuccess then (
                 -- Delay to allow macros to fully reload
                 windows.processPostedMessages()
 
                 local installedVersion = getInstalledVersion()
 
                 if wasInstalled then (
-                    statusText += "✓ Macro button UPGRADED successfully!\n\n"
+                    statusText += "✓ Macro buttons UPGRADED successfully!\n\n"
                     statusText += "Installed Version: " + installedVersion + "\n"
                     statusText += "Category: Eski Tools\n"
-                    statusText += "Button Name: EskiLayerManager\n\n"
+                    if layerSuccess then (
+                        statusText += "  • EskiLayerManager (Layer Manager)\n"
+                    )
+                    if exporterSuccess then (
+                        statusText += "  • EskiExporter (Real-Time Exporter)\n"
+                    )
+                    statusText += "\n"
 
                     -- Launch the new version if reload was successful
                     if reloadSuccess then (
@@ -387,23 +459,29 @@ if 'eski_layer_manager' in sys.modules:
                             python.Execute "import eski_layer_manager; eski_layer_manager.show_layer_manager()"
                             statusText += "✓ Layer Manager launched with new version!\n"
                         ) catch (
-                            statusText += "Changes are live! Click your toolbar button\n"
-                            statusText += "to launch the updated Layer Manager.\n"
+                            statusText += "Changes are live! Click your toolbar buttons\n"
+                            statusText += "to launch the updated tools.\n"
                         )
                     ) else (
-                        statusText += "Changes are live! Click your toolbar button\n"
-                        statusText += "to launch the updated Layer Manager.\n"
+                        statusText += "Changes are live! Click your toolbar buttons\n"
+                        statusText += "to launch the updated tools.\n"
                     )
                 ) else (
-                    statusText += "✓ Macro button INSTALLED successfully!\n\n"
+                    statusText += "✓ Macro buttons INSTALLED successfully!\n\n"
                     statusText += "Installed Version: " + installedVersion + "\n"
                     statusText += "Category: Eski Tools\n"
-                    statusText += "Button Name: EskiLayerManager\n\n"
-                    statusText += "NEXT STEPS:\n"
+                    if layerSuccess then (
+                        statusText += "  • EskiLayerManager (Layer Manager)\n"
+                    )
+                    if exporterSuccess then (
+                        statusText += "  • EskiExporter (Real-Time Exporter)\n"
+                    )
+                    statusText += "\nNEXT STEPS:\n"
                     statusText += "1. Press Y or go to:\n"
                     statusText += "   Customize > Customize User Interface\n"
                     statusText += "2. Select category: 'Eski Tools'\n"
-                    statusText += "3. Drag 'EskiLayerManager' to any toolbar\n"
+                    statusText += "3. Drag 'EskiLayerManager' and/or 'EskiExporter'\n"
+                    statusText += "   to any toolbar\n"
                     statusText += "4. Click Save and Close\n\n"
                     statusText += "Then click the button to launch the Layer Manager!\n\n"
                     statusText += "Tip: You can assign a keyboard shortcut in:\n"
@@ -422,8 +500,8 @@ if 'eski_layer_manager' in sys.modules:
 
         -- Uninstall button
         on btnUninstall pressed do (
-            if macroExists() then (
-                if queryBox "Are you sure you want to UNINSTALL the Eski Layer Manager?\n\nThis will remove:\n- Macro button file (.mcr)\n- Python script file (.py)\n- Requires 3ds Max restart to fully clear actions\n\n(You can reinstall anytime by running this script again)" title:"Confirm Uninstall" then (
+            if macrosExist() then (
+                if queryBox "Are you sure you want to UNINSTALL Eski Tools?\n\nThis will remove:\n- Macro button files (.mcr)\n- Python script files (.py)\n- Requires 3ds Max restart to fully clear actions\n\n(You can reinstall anytime by running this script again)" title:"Confirm Uninstall" then (
                     if uninstallMacro() then (
                         local statusText = "✓ Files REMOVED successfully!\n\n"
                         statusText += "✓ Macro button file deleted\n"

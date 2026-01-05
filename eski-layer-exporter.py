@@ -1,6 +1,6 @@
 """
 Eski Exporter by Claude
-FBX export functionality with animation takes and timeline management for 3ds Max
+Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
 Version: 0.1.0 (2026-01-05)
 """
@@ -15,209 +15,321 @@ except ImportError as e:
     rt = None
     print(f"Warning: pymxs not available - {e}")
 
+# Try to import qtmax for docking functionality
+try:
+    import qtmax
+    QTMAX_AVAILABLE = True
+except ImportError:
+    QTMAX_AVAILABLE = False
+    print("Warning: qtmax not available. Window will not have Max integration.")
+
 VERSION = "0.1.0 (2026-01-05)"
 
+# Singleton pattern - keep reference to prevent garbage collection
+_exporter_instance = None
 
-class FBXExporter:
+
+class EskiExporterDialog(QtWidgets.QDialog):
     """
-    Main FBX exporter class
-    Handles FBX export with animation takes and timeline management
-    """
-
-    def __init__(self):
-        """Initialize the FBX exporter"""
-        self.takes = []  # List of animation takes
-        self.current_timeline_range = None
-
-    def export_fbx(self, file_path, options=None):
-        """
-        Export scene or selection to FBX
-
-        Args:
-            file_path (str): Output FBX file path
-            options (dict): Export options
-
-        Returns:
-            bool: True if export succeeded, False otherwise
-        """
-        if rt is None:
-            print("Error: pymxs not available")
-            return False
-
-        # TODO: Implement FBX export logic
-        print(f"[FBX Export] Would export to: {file_path}")
-        return True
-
-    def create_take(self, name, start_frame, end_frame):
-        """
-        Create an animation take
-
-        Args:
-            name (str): Take name
-            start_frame (int): Start frame
-            end_frame (int): End frame
-        """
-        take = {
-            'name': name,
-            'start': start_frame,
-            'end': end_frame
-        }
-        self.takes.append(take)
-        print(f"[Take] Created: {name} ({start_frame}-{end_frame})")
-
-    def get_takes(self):
-        """Get list of all takes"""
-        return self.takes
-
-    def delete_take(self, take_name):
-        """Delete a take by name"""
-        self.takes = [t for t in self.takes if t['name'] != take_name]
-        print(f"[Take] Deleted: {take_name}")
-
-    def get_timeline_range(self):
-        """Get current timeline range from 3ds Max"""
-        if rt is None:
-            return (0, 100)
-
-        start = int(rt.animationRange.start)
-        end = int(rt.animationRange.end)
-        return (start, end)
-
-    def set_timeline_range(self, start_frame, end_frame):
-        """Set timeline range in 3ds Max"""
-        if rt is None:
-            print("Error: pymxs not available")
-            return False
-
-        rt.animationRange = rt.interval(start_frame, end_frame)
-        print(f"[Timeline] Set range: {start_frame}-{end_frame}")
-        return True
-
-
-class FBXExportDialog(QtWidgets.QDialog):
-    """
-    Dialog for FBX export options
+    Main dialog for Real-Time FBX Exporter
+    Provides streamlined workflow for exporting models and animation clips
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.exporter = FBXExporter()
+
+        # Set window flags to keep it on top but not modal
+        self.setWindowFlags(
+            QtCore.Qt.Window |
+            QtCore.Qt.WindowStaysOnTopHint
+        )
+
+        self.animation_clips = []  # List of animation clips
         self.setup_ui()
 
     def setup_ui(self):
-        """Setup the UI"""
-        self.setWindowTitle(f"FBX Exporter {VERSION}")
-        self.setMinimumWidth(400)
-        self.setMinimumHeight(500)
+        """Setup the user interface"""
+        self.setWindowTitle(f"Eski Real-Time Exporter - {VERSION}")
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(600)
 
-        layout = QtWidgets.QVBoxLayout(self)
+        # Main layout
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setSpacing(10)
 
         # Header
-        header = QtWidgets.QLabel("FBX Export with Animation Takes")
-        header.setStyleSheet("font-weight: bold; font-size: 14px;")
-        layout.addWidget(header)
+        header = QtWidgets.QLabel("Real-Time FBX Exporter")
+        header.setStyleSheet("font-weight: bold; font-size: 16px; padding: 5px;")
+        header.setAlignment(QtCore.Qt.AlignCenter)
+        main_layout.addWidget(header)
 
-        # File path selection
-        file_group = QtWidgets.QGroupBox("Export File")
-        file_layout = QtWidgets.QHBoxLayout(file_group)
+        # === Export File Section ===
+        file_group = self.create_file_section()
+        main_layout.addWidget(file_group)
 
-        self.file_path_edit = QtWidgets.QLineEdit()
-        self.file_path_edit.setPlaceholderText("Select output FBX file...")
-        file_layout.addWidget(self.file_path_edit)
+        # === Export Options Section ===
+        options_group = self.create_export_options_section()
+        main_layout.addWidget(options_group)
 
-        browse_btn = QtWidgets.QPushButton("Browse...")
-        browse_btn.clicked.connect(self.browse_file)
-        file_layout.addWidget(browse_btn)
+        # === Animation Clips Section ===
+        clips_group = self.create_animation_clips_section()
+        main_layout.addWidget(clips_group, 1)  # Give it stretch factor
 
-        layout.addWidget(file_group)
-
-        # Takes list (placeholder for future implementation)
-        takes_group = QtWidgets.QGroupBox("Animation Takes")
-        takes_layout = QtWidgets.QVBoxLayout(takes_group)
-        takes_layout.addWidget(QtWidgets.QLabel("Takes management coming soon..."))
-        layout.addWidget(takes_group)
-
-        # Export button
+        # === Export Button ===
         export_btn = QtWidgets.QPushButton("Export FBX")
         export_btn.setMinimumHeight(40)
+        export_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                font-size: 14px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:pressed {
+                background-color: #3d8b40;
+            }
+        """)
         export_btn.clicked.connect(self.do_export)
-        layout.addWidget(export_btn)
+        main_layout.addWidget(export_btn)
 
-        # Status
-        self.status_label = QtWidgets.QLabel("Ready")
-        layout.addWidget(self.status_label)
+        # Status bar
+        self.status_label = QtWidgets.QLabel("Ready to export")
+        self.status_label.setStyleSheet("padding: 5px; background-color: #f0f0f0; border-radius: 3px;")
+        main_layout.addWidget(self.status_label)
+
+    def create_file_section(self):
+        """Create the file selection section"""
+        group = QtWidgets.QGroupBox("Export File")
+        layout = QtWidgets.QVBoxLayout(group)
+
+        # File path row
+        file_row = QtWidgets.QHBoxLayout()
+
+        self.file_path_edit = QtWidgets.QLineEdit()
+        self.file_path_edit.setPlaceholderText("Select output FBX file path...")
+        file_row.addWidget(self.file_path_edit, 1)
+
+        browse_btn = QtWidgets.QPushButton("Browse...")
+        browse_btn.setMinimumWidth(80)
+        browse_btn.clicked.connect(self.browse_file)
+        file_row.addWidget(browse_btn)
+
+        layout.addLayout(file_row)
+
+        return group
+
+    def create_export_options_section(self):
+        """Create the export options section"""
+        group = QtWidgets.QGroupBox("Export Options")
+        layout = QtWidgets.QVBoxLayout(group)
+
+        # Export Set dropdown
+        set_row = QtWidgets.QHBoxLayout()
+        set_row.addWidget(QtWidgets.QLabel("Export Set:"))
+
+        self.export_set_combo = QtWidgets.QComboBox()
+        self.export_set_combo.addItems([
+            "Export All",
+            "Export Selection",
+            "Export Object Set"
+        ])
+        set_row.addWidget(self.export_set_combo, 1)
+        layout.addLayout(set_row)
+
+        # Single file vs multiple files
+        self.single_file_radio = QtWidgets.QRadioButton("Export all clips to single file")
+        self.single_file_radio.setChecked(True)
+        layout.addWidget(self.single_file_radio)
+
+        self.multiple_files_radio = QtWidgets.QRadioButton("Export one file per clip")
+        layout.addWidget(self.multiple_files_radio)
+
+        return group
+
+    def create_animation_clips_section(self):
+        """Create the animation clips management section"""
+        group = QtWidgets.QGroupBox("Animation Clips")
+        layout = QtWidgets.QVBoxLayout(group)
+
+        # Toolbar
+        toolbar = QtWidgets.QHBoxLayout()
+
+        add_clip_btn = QtWidgets.QPushButton("Add Clip")
+        add_clip_btn.clicked.connect(self.add_clip)
+        toolbar.addWidget(add_clip_btn)
+
+        remove_clip_btn = QtWidgets.QPushButton("Remove Clip")
+        remove_clip_btn.clicked.connect(self.remove_clip)
+        toolbar.addWidget(remove_clip_btn)
+
+        toolbar.addStretch()
+
+        info_label = QtWidgets.QLabel("Tip: Add clips for different animations (walk, run, idle, etc.)")
+        info_label.setStyleSheet("color: #666; font-style: italic;")
+        toolbar.addWidget(info_label)
+
+        layout.addLayout(toolbar)
+
+        # Clips table (placeholder - will be enhanced later)
+        self.clips_table = QtWidgets.QTableWidget()
+        self.clips_table.setColumnCount(4)
+        self.clips_table.setHorizontalHeaderLabels(["Export", "Clip Name", "Start Frame", "End Frame"])
+        self.clips_table.horizontalHeader().setStretchLastSection(True)
+        self.clips_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.clips_table.setAlternatingRowColors(True)
+
+        # Set column widths
+        self.clips_table.setColumnWidth(0, 60)  # Checkbox column
+        self.clips_table.setColumnWidth(1, 150)  # Name column
+        self.clips_table.setColumnWidth(2, 100)  # Start frame
+
+        layout.addWidget(self.clips_table)
+
+        return group
 
     def browse_file(self):
         """Open file browser for FBX output"""
         file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Export FBX",
+            "Export FBX File",
             "",
             "FBX Files (*.fbx);;All Files (*.*)"
         )
 
         if file_path:
+            # Ensure .fbx extension
+            if not file_path.lower().endswith('.fbx'):
+                file_path += '.fbx'
             self.file_path_edit.setText(file_path)
 
+    def add_clip(self):
+        """Add a new animation clip"""
+        # Get current timeline range as default
+        if rt:
+            start = int(rt.animationRange.start)
+            end = int(rt.animationRange.end)
+        else:
+            start = 0
+            end = 100
+
+        # For now, just add a placeholder row
+        row = self.clips_table.rowCount()
+        self.clips_table.insertRow(row)
+
+        # Checkbox
+        checkbox = QtWidgets.QCheckBox()
+        checkbox.setChecked(True)
+        checkbox_widget = QtWidgets.QWidget()
+        checkbox_layout = QtWidgets.QHBoxLayout(checkbox_widget)
+        checkbox_layout.addWidget(checkbox)
+        checkbox_layout.setAlignment(QtCore.Qt.AlignCenter)
+        checkbox_layout.setContentsMargins(0, 0, 0, 0)
+        self.clips_table.setCellWidget(row, 0, checkbox_widget)
+
+        # Clip name
+        name_item = QtWidgets.QTableWidgetItem(f"Clip_{row + 1}")
+        self.clips_table.setItem(row, 1, name_item)
+
+        # Start frame
+        start_item = QtWidgets.QTableWidgetItem(str(start))
+        self.clips_table.setItem(row, 2, start_item)
+
+        # End frame
+        end_item = QtWidgets.QTableWidgetItem(str(end))
+        self.clips_table.setItem(row, 3, end_item)
+
+        self.status_label.setText(f"Added clip: Clip_{row + 1}")
+
+    def remove_clip(self):
+        """Remove selected animation clip"""
+        current_row = self.clips_table.currentRow()
+        if current_row >= 0:
+            clip_name = self.clips_table.item(current_row, 1).text()
+            self.clips_table.removeRow(current_row)
+            self.status_label.setText(f"Removed clip: {clip_name}")
+        else:
+            self.status_label.setText("No clip selected to remove")
+
     def do_export(self):
-        """Perform the export"""
-        file_path = self.file_path_edit.text()
+        """Perform the FBX export"""
+        file_path = self.file_path_edit.text().strip()
 
         if not file_path:
             QtWidgets.QMessageBox.warning(
                 self,
                 "No File Selected",
-                "Please select an output FBX file."
+                "Please select an output FBX file path."
             )
             return
 
-        self.status_label.setText("Exporting...")
+        # TODO: Implement actual export logic
+        self.status_label.setText("Exporting... (Implementation pending)")
         QtWidgets.QApplication.processEvents()
 
-        success = self.exporter.export_fbx(file_path)
+        # Placeholder success message
+        QtWidgets.QMessageBox.information(
+            self,
+            "Export Ready",
+            f"Export functionality will be implemented next.\nTarget file: {file_path}"
+        )
+        self.status_label.setText("Ready to export")
 
-        if success:
-            self.status_label.setText(f"✓ Exported to: {file_path}")
-            QtWidgets.QMessageBox.information(
-                self,
-                "Export Complete",
-                f"FBX exported successfully to:\n{file_path}"
-            )
-        else:
-            self.status_label.setText("✗ Export failed")
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Export Failed",
-                "Failed to export FBX. Check MAXScript Listener for details."
-            )
+    def closeEvent(self, event):
+        """Handle window close event"""
+        global _exporter_instance
+        _exporter_instance = None
+        event.accept()
 
 
 def show_exporter():
     """
-    Show the FBX exporter dialog
-    Entry point for launching the exporter
+    Show the Eski Exporter dialog
+    Entry point function called from 3ds Max macro
+
+    Uses singleton pattern to ensure only one instance exists
     """
+    global _exporter_instance
+
+    # If instance exists and is visible, bring it to front
+    if _exporter_instance is not None:
+        try:
+            _exporter_instance.raise_()
+            _exporter_instance.activateWindow()
+            print("[Eski Exporter] Bringing existing window to front")
+            return _exporter_instance
+        except:
+            # Instance exists but is invalid, create new one
+            _exporter_instance = None
+
+    # Get parent window
     try:
-        # Import qtmax for proper 3ds Max integration
         import qtmax
         parent = qtmax.GetQMaxMainWindow()
     except ImportError:
-        # Fallback for standalone testing
         parent = None
 
-    dialog = FBXExportDialog(parent)
-    dialog.show()
-    return dialog
+    # Create new instance
+    _exporter_instance = EskiExporterDialog(parent)
+    _exporter_instance.show()
+
+    print(f"[Eski Exporter] Opened version {VERSION}")
+    return _exporter_instance
 
 
-# For standalone testing
+# For standalone testing outside 3ds Max
 if __name__ == '__main__':
     import sys
+
+    print("Running Eski Exporter in standalone mode (no 3ds Max)")
+
     app = QtWidgets.QApplication.instance()
     if not app:
         app = QtWidgets.QApplication(sys.argv)
 
     dialog = show_exporter()
 
-    if not QtWidgets.QApplication.instance():
-        sys.exit(app.exec())
+    sys.exit(app.exec())
