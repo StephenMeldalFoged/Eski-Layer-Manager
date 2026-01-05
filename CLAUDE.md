@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, improving upon the built-in layer management tools.
 
-**Current Version:** 0.23.9
+**Current Version:** 0.24.2 (2025-12-19 14:30)
 
 ## Quick Reference
 
@@ -222,6 +222,14 @@ Window docking position and state are preserved between sessions:
 - Settings persist across 3ds Max restarts
 - Toggle feature available through UI
 
+### UI State Persistence (v0.24.0+)
+
+Layer tree state is preserved across refresh operations:
+- **Expand/collapse state (v0.24.1+):** Tree expansion state maintained when refreshing
+- **Inline rename persistence (v0.24.2+):** Layer names retain edit state during creation
+- **Parent-hidden inheritance (v0.24.0+):** Child layers correctly show inherited hidden state from parents
+- State tracking uses layer names as keys to survive tree rebuilds
+
 ### Context Menu System (v0.19.0+)
 
 Right-click context menus provide quick access to layer operations:
@@ -290,8 +298,7 @@ Tips array stored in `self.tips` list with 40+ entries covering:
 ### Git Branching Strategy
 
 - **main**: Stable releases with version tags
-- **Feature branches**: Named descriptively (e.g., `Status`)
-  - Current active branch: `Status` (for status bar and tips features)
+- **Feature branches**: Named descriptively
 - Version tags follow semantic versioning (v0.x.x)
 - Detailed version history available in `docs/Eski-LayerManager-By-Claude-Version-History.txt`
 - When creating PRs, target the `main` branch
@@ -500,6 +507,8 @@ callbacks.show()
 - ✓ Hide/show/freeze/unfreeze layers
 - ✓ Isolate layer functionality (Ctrl+Click eye icon)
 - ✓ Position persistence across sessions
+- ✓ UI state persistence (expand/collapse, inline rename)
+- ✓ Parent-hidden inheritance icon display
 - ✓ Singleton pattern (prevents multiple instances)
 - ✓ Custom tree rendering with inline icons
 - ✓ Status bar with cycling tips and tricks
