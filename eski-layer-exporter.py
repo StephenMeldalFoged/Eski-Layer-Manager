@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.4.4 (2026-01-05 16:05)
+Version: 0.4.4 (2026-01-05 16:46)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.4.4 (2026-01-05 16:05)"
+VERSION = "0.4.4 (2026-01-05 16:46)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
