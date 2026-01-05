@@ -3,7 +3,7 @@
 
 (
     -- Version of the installer
-    local installerVersion = "0.21.1 (2026-01-05 14:36)"
+    local installerVersion = "0.21.2 (2026-01-05 15:00)"
 
     -- Function to check if macro files exist
     fn macrosExist = (
@@ -399,7 +399,27 @@ if 'eski_layer_manager' in sys.modules:
                 python.Execute closeScript
                 statusText += "✓ Closed existing Layer Manager window\n"
             ) catch (
-                format "[INSTALLER] Error closing window: %\n" (getCurrentException())
+                format "[INSTALLER] Error closing Layer Manager window: %\n" (getCurrentException())
+            )
+
+            -- Close any existing Exporter window before upgrade
+            try (
+                local closeExporterScript = "
+import sys
+if 'eski_layer_exporter' in sys.modules:
+    import eski_layer_exporter
+    if hasattr(eski_layer_exporter, '_exporter_instance') and eski_layer_exporter._exporter_instance is not None:
+        try:
+            if eski_layer_exporter._exporter_instance.isVisible():
+                eski_layer_exporter._exporter_instance.close()
+                print('[INSTALLER] Closed existing Exporter window')
+        except Exception as e:
+            print('[INSTALLER] Could not close exporter: ' + str(e))
+"
+                python.Execute closeExporterScript
+                statusText += "✓ Closed existing Exporter window\n"
+            ) catch (
+                format "[INSTALLER] Error closing Exporter window: %\n" (getCurrentException())
             )
 
             -- First, try to copy the Python scripts
@@ -460,8 +480,13 @@ if 'eski_layer_manager' in sys.modules:
                             python.Execute "import eski_layer_manager; eski_layer_manager.show_layer_manager()"
                             statusText += "✓ Layer Manager launched with new version!\n"
                         ) catch (
-                            statusText += "Changes are live! Click your toolbar buttons\n"
-                            statusText += "to launch the updated tools.\n"
+                            statusText += "Could not auto-launch Layer Manager\n"
+                        )
+                        try (
+                            python.Execute "import eski_layer_exporter; eski_layer_exporter.show_exporter()"
+                            statusText += "✓ Exporter launched with new version!\n"
+                        ) catch (
+                            statusText += "Could not auto-launch Exporter\n"
                         )
                     ) else (
                         statusText += "Changes are live! Click your toolbar buttons\n"
