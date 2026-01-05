@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.2.1 (2026-01-05 14:55)
+Version: 0.2.2 (2026-01-05 15:05)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.2.1 (2026-01-05 14:55)"
+VERSION = "0.2.2 (2026-01-05 15:05)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -48,7 +48,7 @@ class CollapsibleSection(QtWidgets.QWidget):
         self.header_btn.setStyleSheet("""
             QPushButton {
                 text-align: left;
-                padding: 8px;
+                padding: 5px 8px;
                 background-color: #3a3a3a;
                 border: 1px solid #555;
                 font-weight: bold;
@@ -60,10 +60,12 @@ class CollapsibleSection(QtWidgets.QWidget):
         self.header_btn.clicked.connect(self.toggle_collapsed)
         layout.addWidget(self.header_btn)
 
-        # Content widget (group box)
-        self.content_widget = QtWidgets.QGroupBox()
-        self.content_widget.setStyleSheet("QGroupBox { border: 1px solid #555; margin-top: 0px; }")
+        # Content widget (plain widget, no group box border)
+        self.content_widget = QtWidgets.QWidget()
+        self.content_widget.setStyleSheet("QWidget { border: 1px solid #555; border-top: none; background-color: palette(window); }")
         self.content_layout = QtWidgets.QVBoxLayout(self.content_widget)
+        self.content_layout.setContentsMargins(8, 8, 8, 8)
+        self.content_layout.setSpacing(5)
         layout.addWidget(self.content_widget)
 
         self.title = title
@@ -105,7 +107,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
         # Main layout
         main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.setSpacing(10)
+        main_layout.setSpacing(2)
 
         # === Export File Section ===
         file_group = self.create_file_section()
