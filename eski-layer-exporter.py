@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.1.0 (2026-01-05 14:01)
+Version: 0.1.1 (2026-01-05 14:31)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.1.0 (2026-01-05 14:01)"
+VERSION = "0.1.1 (2026-01-05 14:31)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -140,13 +140,10 @@ class EskiExporterDialog(QtWidgets.QDialog):
         set_row.addWidget(self.export_set_combo, 1)
         layout.addLayout(set_row)
 
-        # Single file vs multiple files
-        self.single_file_radio = QtWidgets.QRadioButton("Export all clips to single file")
-        self.single_file_radio.setChecked(True)
-        layout.addWidget(self.single_file_radio)
-
-        self.multiple_files_radio = QtWidgets.QRadioButton("Export one file per clip")
-        layout.addWidget(self.multiple_files_radio)
+        # Note: All clips will be exported to a single file
+        note_label = QtWidgets.QLabel("Note: All animation clips will be exported to a single FBX file")
+        note_label.setStyleSheet("color: #666; font-style: italic; padding: 5px;")
+        layout.addWidget(note_label)
 
         return group
 
