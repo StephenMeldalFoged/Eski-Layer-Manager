@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.4.3 (2026-01-05 16:00)
+Version: 0.4.4 (2026-01-05 16:05)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.4.3 (2026-01-05 16:00)"
+VERSION = "0.4.4 (2026-01-05 16:05)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -677,30 +677,44 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
     def clear_all_settings(self):
         """Clear all exporter settings"""
-        # Block signals to prevent auto-save during clear
-        self.layers_tree.blockSignals(True)
-        self.clips_table.blockSignals(True)
+        print("[Exporter] clear_all_settings called")
 
-        # Clear folder path
-        self.file_path_edit.clear()
+        try:
+            # Block signals to prevent auto-save during clear
+            self.layers_tree.blockSignals(True)
+            self.clips_table.blockSignals(True)
 
-        # Clear animation clips
-        self.clips_table.setRowCount(0)
+            # Clear folder path
+            self.file_path_edit.clear()
+            self.file_path_edit.setText("")  # Force empty
+            print(f"[Exporter] Folder path cleared, current value: '{self.file_path_edit.text()}'")
 
-        # Clear saved checked layers to prevent restore
-        self.saved_checked_layers = set()
+            # Clear animation clips
+            self.clips_table.setRowCount(0)
+            print(f"[Exporter] Clips cleared, count: {self.clips_table.rowCount()}")
 
-        # Repopulate layers without preserving any check states
-        self.populate_layers()
+            # Clear saved checked layers to prevent restore
+            self.saved_checked_layers = set()
 
-        # Restore signals
-        self.layers_tree.blockSignals(False)
-        self.clips_table.blockSignals(False)
+            # Clear layer snapshot to force refresh
+            self.layer_snapshot = {}
 
-        # Update status
-        self.status_label.setText("Ready to export")
+            # Repopulate layers without preserving any check states
+            self.populate_layers()
+            print(f"[Exporter] Layers repopulated, count: {self.layers_tree.topLevelItemCount()}")
 
-        print("[Exporter] Settings cleared")
+            # Restore signals
+            self.layers_tree.blockSignals(False)
+            self.clips_table.blockSignals(False)
+
+            # Update status
+            self.status_label.setText("Ready to export")
+
+            print("[Exporter] Settings cleared successfully")
+        except Exception as e:
+            print(f"[Exporter] Error clearing settings: {e}")
+            import traceback
+            traceback.print_exc()
 
     def closeEvent(self, event):
         """Handle window close event"""
