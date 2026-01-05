@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.1.3 (2026-01-05 14:42)
+Version: 0.2.0 (2026-01-05 14:50)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.1.3 (2026-01-05 14:42)"
+VERSION = "0.2.0 (2026-01-05 14:50)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -114,27 +114,25 @@ class EskiExporterDialog(QtWidgets.QDialog):
         return group
 
     def create_export_options_section(self):
-        """Create the export options section"""
-        group = QtWidgets.QGroupBox("Export Options")
+        """Create the layers selection section"""
+        group = QtWidgets.QGroupBox("Layers to Export")
         layout = QtWidgets.QVBoxLayout(group)
 
-        # Export Set dropdown
-        set_row = QtWidgets.QHBoxLayout()
-        set_row.addWidget(QtWidgets.QLabel("Export Set:"))
+        # Info label
+        info_label = QtWidgets.QLabel("Check layers to export (includes all sublayers)")
+        info_label.setStyleSheet("color: #666; font-style: italic; padding: 5px;")
+        layout.addWidget(info_label)
 
-        self.export_set_combo = QtWidgets.QComboBox()
-        self.export_set_combo.addItems([
-            "Export All",
-            "Export Selection",
-            "Export Object Set"
-        ])
-        set_row.addWidget(self.export_set_combo, 1)
-        layout.addLayout(set_row)
+        # Layers tree
+        self.layers_tree = QtWidgets.QTreeWidget()
+        self.layers_tree.setHeaderHidden(True)
+        self.layers_tree.setAlternatingRowColors(True)
+        self.layers_tree.setMinimumHeight(150)
+        self.layers_tree.itemChanged.connect(self.on_layer_check_changed)
+        layout.addWidget(self.layers_tree)
 
-        # Note: All clips will be exported to a single file
-        note_label = QtWidgets.QLabel("Note: All animation clips will be exported to a single FBX file")
-        note_label.setStyleSheet("color: #666; font-style: italic; padding: 5px;")
-        layout.addWidget(note_label)
+        # Populate layers
+        self.populate_layers()
 
         return group
 
@@ -193,6 +191,104 @@ class EskiExporterDialog(QtWidgets.QDialog):
             if not file_path.lower().endswith('.fbx'):
                 file_path += '.fbx'
             self.file_path_edit.setText(file_path)
+
+    def populate_layers(self):
+        """Populate the layers tree from 3ds Max"""
+        self.layers_tree.clear()
+
+        if not rt:
+            # Standalone mode - add dummy layers
+            dummy_item = QtWidgets.QTreeWidgetItem(["Layer_01"])
+            dummy_item.setFlags(dummy_item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            dummy_item.setCheckState(0, QtCore.Qt.Unchecked)
+            self.layers_tree.addTopLevelItem(dummy_item)
+            return
+
+        # Get layer manager
+        layer_manager = rt.layerManager
+
+        # Build dictionary of layers by parent
+        root_layers = []
+        for i in range(layer_manager.count):
+            layer = layer_manager.getLayer(i)
+            parent = layer.getParent()
+
+            # Check if this is a root layer (no parent or parent is undefined)
+            if parent is None or str(parent) == "undefined":
+                root_layers.append(layer)
+
+        # Add root layers to tree
+        for layer in root_layers:
+            self.add_layer_to_tree(layer, None)
+
+        # Expand all items by default
+        self.layers_tree.expandAll()
+
+    def add_layer_to_tree(self, layer, parent_item):
+        """Recursively add layer and its children to tree"""
+        if not layer:
+            return
+
+        # Create tree item
+        item = QtWidgets.QTreeWidgetItem([layer.name])
+        item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+        item.setCheckState(0, QtCore.Qt.Unchecked)
+
+        # Store layer reference
+        item.setData(0, QtCore.Qt.UserRole, layer.name)
+
+        # Add to parent or root
+        if parent_item:
+            parent_item.addChild(item)
+        else:
+            self.layers_tree.addTopLevelItem(item)
+
+        # Add children
+        num_children = layer.getNumChildren()
+        for i in range(num_children):
+            child_layer = layer.getChild(i + 1)  # MAXScript uses 1-based indexing
+            self.add_layer_to_tree(child_layer, item)
+
+        return item
+
+    def on_layer_check_changed(self, item, column):
+        """Handle layer checkbox state changes"""
+        # Block signals to prevent recursive updates
+        self.layers_tree.blockSignals(True)
+
+        # Update highlighting for all items
+        self.update_layer_highlighting()
+
+        self.layers_tree.blockSignals(False)
+
+    def update_layer_highlighting(self):
+        """Update green highlighting for checked layers and their children"""
+        def update_item_highlight(item):
+            is_checked = item.checkState(0) == QtCore.Qt.Checked
+            is_parent_checked = self.is_parent_checked(item)
+
+            # Apply green background if checked or parent is checked
+            if is_checked or is_parent_checked:
+                item.setBackground(0, QtGui.QColor(144, 238, 144))  # Light green
+            else:
+                item.setBackground(0, QtGui.QColor(0, 0, 0, 0))  # Transparent
+
+            # Recursively update children
+            for i in range(item.childCount()):
+                update_item_highlight(item.child(i))
+
+        # Update all top-level items
+        for i in range(self.layers_tree.topLevelItemCount()):
+            update_item_highlight(self.layers_tree.topLevelItem(i))
+
+    def is_parent_checked(self, item):
+        """Check if any parent of this item is checked"""
+        parent = item.parent()
+        while parent:
+            if parent.checkState(0) == QtCore.Qt.Checked:
+                return True
+            parent = parent.parent()
+        return False
 
     def add_clip(self):
         """Add a new animation clip"""
