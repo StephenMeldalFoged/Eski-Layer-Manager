@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.4.0 (2026-01-05 15:50)
+Version: 0.4.1 (2026-01-05 15:55)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.4.0 (2026-01-05 15:50)"
+VERSION = "0.4.1 (2026-01-05 15:55)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -635,6 +635,27 @@ class EskiExporterDialog(QtWidgets.QDialog):
                 id=rt.Name("EskiExporterLayerDeleted")
             )
 
+            # File reset callback - clear settings
+            rt.callbacks.addScript(
+                rt.Name("systemPostReset"),
+                "python.execute('import eski_layer_exporter; eski_layer_exporter.clear_settings_from_callback()')",
+                id=rt.Name("EskiExporterReset")
+            )
+
+            # File new callback - clear settings
+            rt.callbacks.addScript(
+                rt.Name("systemPostNew"),
+                "python.execute('import eski_layer_exporter; eski_layer_exporter.clear_settings_from_callback()')",
+                id=rt.Name("EskiExporterNew")
+            )
+
+            # File open callback - reload settings
+            rt.callbacks.addScript(
+                rt.Name("filePostOpen"),
+                "python.execute('import eski_layer_exporter; eski_layer_exporter.reload_settings_from_callback()')",
+                id=rt.Name("EskiExporterOpen")
+            )
+
             print("[Exporter] Callbacks registered")
         except Exception as e:
             print(f"[Exporter] Error registering callbacks: {e}")
@@ -647,9 +668,38 @@ class EskiExporterDialog(QtWidgets.QDialog):
         try:
             rt.callbacks.removeScripts(id=rt.Name("EskiExporterLayerCreated"))
             rt.callbacks.removeScripts(id=rt.Name("EskiExporterLayerDeleted"))
+            rt.callbacks.removeScripts(id=rt.Name("EskiExporterReset"))
+            rt.callbacks.removeScripts(id=rt.Name("EskiExporterNew"))
+            rt.callbacks.removeScripts(id=rt.Name("EskiExporterOpen"))
             print("[Exporter] Callbacks removed")
         except Exception as e:
             print(f"[Exporter] Error removing callbacks: {e}")
+
+    def clear_all_settings(self):
+        """Clear all exporter settings"""
+        # Block signals to prevent auto-save during clear
+        self.layers_tree.blockSignals(True)
+        self.clips_table.blockSignals(True)
+
+        # Clear folder path
+        self.file_path_edit.clear()
+
+        # Uncheck all layers
+        for i in range(self.layers_tree.topLevelItemCount()):
+            item = self.layers_tree.topLevelItem(i)
+            item.setCheckState(0, QtCore.Qt.Unchecked)
+
+        # Clear animation clips
+        self.clips_table.setRowCount(0)
+
+        # Restore signals
+        self.layers_tree.blockSignals(False)
+        self.clips_table.blockSignals(False)
+
+        # Update status
+        self.status_label.setText("Ready to export")
+
+        print("[Exporter] Settings cleared")
 
     def closeEvent(self, event):
         """Handle window close event"""
@@ -674,6 +724,33 @@ def refresh_from_callback():
     global _exporter_instance
     if _exporter_instance is not None:
         try:
+            _exporter_instance.refresh_layers()
+        except (RuntimeError, AttributeError):
+            pass
+
+
+def clear_settings_from_callback():
+    """
+    Called by 3ds Max callbacks when file is reset or new
+    Clears all exporter settings
+    """
+    global _exporter_instance
+    if _exporter_instance is not None:
+        try:
+            _exporter_instance.clear_all_settings()
+        except (RuntimeError, AttributeError):
+            pass
+
+
+def reload_settings_from_callback():
+    """
+    Called by 3ds Max callbacks when file is opened
+    Reloads settings from the file
+    """
+    global _exporter_instance
+    if _exporter_instance is not None:
+        try:
+            _exporter_instance.load_settings()
             _exporter_instance.refresh_layers()
         except (RuntimeError, AttributeError):
             pass
