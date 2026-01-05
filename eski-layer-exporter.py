@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.2.6 (2026-01-05 15:18)
+Version: 0.2.7 (2026-01-05 15:22)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.2.6 (2026-01-05 15:18)"
+VERSION = "0.2.7 (2026-01-05 15:22)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -177,7 +177,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
         layout = section.get_content_layout()
 
         # Info label
-        info_label = QtWidgets.QLabel("Check layers to export (includes all sublayers)")
+        info_label = QtWidgets.QLabel("Check top-level layers to export (includes all sublayers)")
         info_label.setStyleSheet("color: #666; font-style: italic; padding: 5px;")
         layout.addWidget(info_label)
 
@@ -302,8 +302,11 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
         # Create tree item
         item = QtWidgets.QTreeWidgetItem([layer.name])
-        item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-        item.setCheckState(0, QtCore.Qt.Unchecked)
+
+        # Only top-level layers can be checked
+        if parent_item is None:
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            item.setCheckState(0, QtCore.Qt.Unchecked)
 
         # Store layer reference
         item.setData(0, QtCore.Qt.UserRole, layer.name)
