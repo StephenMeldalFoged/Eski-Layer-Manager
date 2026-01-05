@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.1.2 (2026-01-05 14:40)
+Version: 0.1.3 (2026-01-05 14:42)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.1.2 (2026-01-05 14:40)"
+VERSION = "0.1.3 (2026-01-05 14:42)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -38,11 +38,8 @@ class EskiExporterDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # Set window flags to keep it on top but not modal
-        self.setWindowFlags(
-            QtCore.Qt.Window |
-            QtCore.Qt.WindowStaysOnTopHint
-        )
+        # Set as normal window (not always on top)
+        self.setWindowFlags(QtCore.Qt.Window)
 
         self.animation_clips = []  # List of animation clips
         self.setup_ui()
