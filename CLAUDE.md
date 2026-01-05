@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, improving upon the built-in layer management tools.
 
-**Current Version:** 0.24.2 (2026-01-05)
+**Current Version:** 0.24.2 (2026-01-05 12:45)
 
 ## Quick Reference
 
@@ -361,13 +361,13 @@ When updating versions:
 
 Both versions should match for major releases, but installer version may lag behind if only Python code changes.
 
-Update these locations when bumping versions (use date of last edit):
-- eski-layer-manager.py line 5: Docstring `Version: X.X.X (YYYY-MM-DD)`
-- eski-layer-manager.py line 36: `VERSION = "X.X.X (YYYY-MM-DD)"`
-- eski-layer-exporter.py line 5: Docstring `Version: X.X.X (YYYY-MM-DD)`
-- eski-layer-exporter.py line 18: `VERSION = "X.X.X (YYYY-MM-DD)"`
-- install-Eski-Layer-Manager.ms line 6: `local installerVersion = "X.X.X (YYYY-MM-DD)"` (only when installer changes)
-- CLAUDE.md line 9: `**Current Version:** X.X.X (YYYY-MM-DD)`
+Update these locations when bumping versions (use date and time of last edit):
+- eski-layer-manager.py line 5: Docstring `Version: X.X.X (YYYY-MM-DD HH:MM)`
+- eski-layer-manager.py line 36: `VERSION = "X.X.X (YYYY-MM-DD HH:MM)"`
+- eski-layer-exporter.py line 5: Docstring `Version: X.X.X (YYYY-MM-DD HH:MM)`
+- eski-layer-exporter.py line 18: `VERSION = "X.X.X (YYYY-MM-DD HH:MM)"`
+- install-Eski-Layer-Manager.ms line 6: `local installerVersion = "X.X.X (YYYY-MM-DD HH:MM)"` (only when installer changes)
+- CLAUDE.md line 9: `**Current Version:** X.X.X (YYYY-MM-DD HH:MM)`
 
 ## Important 3ds Max Integration Notes
 
