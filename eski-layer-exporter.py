@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.2.3 (2026-01-05 15:08)
+Version: 0.2.4 (2026-01-05 15:12)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.2.3 (2026-01-05 15:08)"
+VERSION = "0.2.4 (2026-01-05 15:12)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -152,7 +152,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
     def create_file_section(self):
         """Create the file selection section"""
-        section = CollapsibleSection("Export File")
+        section = CollapsibleSection("Export file to")
         layout = section.get_content_layout()
 
         # File path row
@@ -236,15 +236,26 @@ class EskiExporterDialog(QtWidgets.QDialog):
         return section
 
     def browse_file(self):
-        """Open file browser for FBX output"""
-        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self,
-            "Export FBX File",
-            "",
-            "FBX Files (*.fbx);;All Files (*.*)"
-        )
+        """Open file browser for FBX output using 3ds Max native dialog"""
+        if rt:
+            # Use 3ds Max native file dialog
+            file_path = rt.getSaveFileName(
+                caption="Export FBX File",
+                filename="",
+                types="FBX Files (*.fbx)|*.fbx|All Files (*.*)|*.*"
+            )
+        else:
+            # Fallback to Qt dialog for standalone testing
+            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,
+                "Export FBX File",
+                "",
+                "FBX Files (*.fbx);;All Files (*.*)"
+            )
 
-        if file_path:
+        # Check if file_path is valid (not None/undefined)
+        if file_path and str(file_path) != "undefined":
+            file_path = str(file_path)
             # Ensure .fbx extension
             if not file_path.lower().endswith('.fbx'):
                 file_path += '.fbx'
