@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.4.5 (2026-01-05 16:51)
+Version: 0.4.6 (2026-01-05 16:59)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.4.5 (2026-01-05 16:51)"
+VERSION = "0.4.6 (2026-01-05 16:59)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -430,6 +430,8 @@ class EskiExporterDialog(QtWidgets.QDialog):
         if not rt:
             return
 
+        settings_found = False
+
         try:
             import json
 
@@ -438,6 +440,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
             if settings_json and str(settings_json) != "undefined":
                 settings = json.loads(str(settings_json))
+                settings_found = True
 
                 # Restore export folder
                 if settings.get('export_folder'):
@@ -475,6 +478,19 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
         except Exception as e:
             print(f"[Exporter] Error loading settings: {e}")
+
+        # If no settings found, this is a new/reset scene - clear everything
+        if not settings_found:
+            print("[Exporter] No settings found - clearing UI for new/reset scene")
+            # Block signals to prevent auto-save
+            self.layers_tree.blockSignals(True)
+            self.clips_table.blockSignals(True)
+
+            self.file_path_edit.clear()
+            self.clips_table.setRowCount(0)
+
+            self.layers_tree.blockSignals(False)
+            self.clips_table.blockSignals(False)
 
         # Initialize saved_checked_layers if not set
         if not hasattr(self, 'saved_checked_layers'):
@@ -571,6 +587,20 @@ class EskiExporterDialog(QtWidgets.QDialog):
             return
 
         try:
+            # Check if settings still exist in file
+            try:
+                settings_json = rt.fileProperties.findProperty(rt.Name("custom"), rt.Name("EskiExporterSettings"))
+                settings_exist = settings_json and str(settings_json) != "undefined"
+            except:
+                settings_exist = False
+
+            # If we have UI state but no file settings, scene was reset - reload
+            if not settings_exist and (self.file_path_edit.text() or self.clips_table.rowCount() > 0):
+                print("[Exporter] Scene reset detected - reloading settings")
+                self.load_settings()
+                self.refresh_layers()
+                return
+
             layer_manager = rt.layerManager
             current_snapshot = {}
 
