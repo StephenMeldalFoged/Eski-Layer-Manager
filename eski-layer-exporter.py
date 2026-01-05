@@ -287,25 +287,44 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
 def show_exporter():
     """
-    Show the Eski Exporter dialog
-    Entry point function called from 3ds Max macro
+    Toggle the Eski Exporter window (Singleton pattern)
+    - If window is open and visible: close it
+    - If window is closed or hidden: show it
 
-    Uses singleton pattern to ensure only one instance exists
+    Entry point function called from 3ds Max macro
+    Only one instance can exist at a time.
+
+    Returns:
+        EskiExporterDialog: The singleton instance (or None if closed)
     """
     global _exporter_instance
 
-    # If instance exists and is visible, bring it to front
+    # Check if instance already exists and is valid
     if _exporter_instance is not None:
         try:
-            _exporter_instance.raise_()
-            _exporter_instance.activateWindow()
-            print("[Eski Exporter] Bringing existing window to front")
-            return _exporter_instance
-        except:
-            # Instance exists but is invalid, create new one
+            # Try to access the widget to see if it's still alive
+            # This will raise RuntimeError if the C++ object was deleted
+            is_visible = _exporter_instance.isVisible()
+
+            # If we get here, the widget is still valid
+            if is_visible:
+                # Window is visible - CLOSE it (toggle off)
+                _exporter_instance.close()
+                print("[Eski Exporter] Closed window")
+                return None
+            else:
+                # Window exists but hidden - SHOW it (toggle on)
+                _exporter_instance.show()
+                _exporter_instance.raise_()
+                _exporter_instance.activateWindow()
+                print("[Eski Exporter] Showing existing window")
+                return _exporter_instance
+
+        except (RuntimeError, AttributeError):
+            # Widget was deleted, need to create new one
             _exporter_instance = None
 
-    # Get parent window
+    # No valid instance exists - create new one
     try:
         import qtmax
         parent = qtmax.GetQMaxMainWindow()
@@ -316,7 +335,7 @@ def show_exporter():
     _exporter_instance = EskiExporterDialog(parent)
     _exporter_instance.show()
 
-    print(f"[Eski Exporter] Opened version {VERSION}")
+    print(f"[Eski Exporter] Opened new window - version {VERSION}")
     return _exporter_instance
 
 
