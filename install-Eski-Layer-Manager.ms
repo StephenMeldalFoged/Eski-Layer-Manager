@@ -3,7 +3,7 @@
 
 (
     -- Version of the installer
-    local installerVersion = "0.20.0 (2023-11-15)"
+    local installerVersion = "0.21.0 (2026-01-05)"
 
     -- Function to check if macro file exists
     fn macroExists = (
@@ -26,14 +26,19 @@
                 success = true
             )
 
-            -- Delete Python file
+            -- Delete Python files
             local scriptsDir = getDir #userScripts
-            local pythonFile = scriptsDir + "\\eski_layer_manager.py"
+            local pythonFiles = #(
+                scriptsDir + "\\eski_layer_manager.py",
+                scriptsDir + "\\eski_layer_exporter.py"
+            )
 
-            if doesFileExist pythonFile then (
-                deleteFile pythonFile
-                format "Deleted Python file: %\n" pythonFile
-                success = true
+            for pythonFile in pythonFiles do (
+                if doesFileExist pythonFile then (
+                    deleteFile pythonFile
+                    format "Deleted Python file: %\n" pythonFile
+                    success = true
+                )
             )
 
             -- Reload macros to update action manager
@@ -46,11 +51,12 @@
         )
     )
 
-    -- Function to find and copy the Python script
-    fn copyPythonScript = (
+    -- Function to find and copy a single Python script
+    -- Parameters: sourceFileName (with hyphens), targetFileName (with underscores)
+    fn copySinglePythonScript sourceFileName targetFileName = (
         -- Use user scripts directory, not system scripts directory
         local scriptsDir = getDir #userScripts
-        local targetFile = scriptsDir + "\\eski_layer_manager.py"
+        local targetFile = scriptsDir + "\\" + targetFileName
 
         -- Get user profile path using systemTools
         local userProfile = systemTools.getEnvVariable "USERPROFILE"
@@ -58,20 +64,20 @@
         -- List of possible source locations to check
         local possiblePaths = #(
             -- Same directory as this installer script
-            (getFilenamePath (getThisScriptFilename()) + "eski-layer-manager.py"),
+            (getFilenamePath (getThisScriptFilename()) + sourceFileName),
             -- Current max file directory
-            (maxFilePath + "eski-layer-manager.py"),
+            (maxFilePath + sourceFileName),
             -- Desktop
-            (userProfile + "\\Desktop\\eski-layer-manager.py"),
+            (userProfile + "\\Desktop\\" + sourceFileName),
             -- Downloads folder
-            (userProfile + "\\Downloads\\eski-layer-manager.py"),
+            (userProfile + "\\Downloads\\" + sourceFileName),
             -- Documents folder
-            (userProfile + "\\Documents\\eski-layer-manager.py")
+            (userProfile + "\\Documents\\" + sourceFileName)
         )
 
         -- Try to find the source file
         local sourceFile = undefined
-        format "Searching for eski-layer-manager.py in:\n"
+        format "Searching for % in:\n" sourceFileName
         for path in possiblePaths do (
             format "  Checking: %\n" path
             if doesFileExist path then (
@@ -119,6 +125,44 @@
         ) else (
             format "Source file NOT FOUND in any location\n"
             return #(false, "Source file not found in any of the searched locations")
+        )
+    )
+
+    -- Function to copy all Python scripts
+    fn copyPythonScripts = (
+        local results = #()
+        local allSuccess = true
+        local errorMessages = #()
+
+        -- Define files to copy: #(source_name, target_name)
+        local filesToCopy = #(
+            #("eski-layer-manager.py", "eski_layer_manager.py"),
+            #("eski-layer-exporter.py", "eski_layer_exporter.py")
+        )
+
+        format "\n=== Copying Python files ===\n"
+        for filePair in filesToCopy do (
+            local sourceFileName = filePair[1]
+            local targetFileName = filePair[2]
+
+            local result = copySinglePythonScript sourceFileName targetFileName
+            append results result
+
+            if not result[1] then (
+                allSuccess = false
+                append errorMessages (sourceFileName + ": " + result[2])
+            )
+        )
+
+        -- Return overall result
+        if allSuccess then (
+            return #(true, "All files copied successfully")
+        ) else (
+            local errorMsg = "Some files could not be copied:\n"
+            for msg in errorMessages do (
+                errorMsg += "  - " + msg + "\n"
+            )
+            return #(false, errorMsg)
         )
     )
 
@@ -296,17 +340,17 @@ if 'eski_layer_manager' in sys.modules:
                 format "[INSTALLER] Error closing window: %\n" (getCurrentException())
             )
 
-            -- First, try to copy the Python script
-            local copyResult = copyPythonScript()
+            -- First, try to copy the Python scripts
+            local copyResult = copyPythonScripts()
             local pythonCopied = copyResult[1]
 
             if pythonCopied then (
-                statusText += "✓ Python script copied successfully\n"
-                statusText += "  From: " + copyResult[2] + "\n"
-            ) else (
-                statusText += "⚠ WARNING: Could not find eski-layer-manager.py\n"
+                statusText += "✓ Python scripts copied successfully\n"
                 statusText += "  " + copyResult[2] + "\n"
-                statusText += "  You will need to manually copy it to:\n"
+            ) else (
+                statusText += "⚠ WARNING: Could not copy all Python files\n"
+                statusText += copyResult[2]
+                statusText += "  You may need to manually copy missing files to:\n"
                 statusText += "  " + (getDir #userScripts) + "\n"
             )
 

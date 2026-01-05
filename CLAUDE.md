@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, improving upon the built-in layer management tools.
 
-**Current Version:** 0.24.2 (2025-12-19 14:30)
+**Current Version:** 0.24.2 (2024-12-19 14:30)
 
 ## Quick Reference
 
@@ -30,9 +30,10 @@ eski_layer_manager.show_layer_manager()
 ```
 Eski-Layer-Manager/
 ├── eski-layer-manager.py          # Main Python application (1100+ lines)
-├── install-Eski-Layer-Manager.ms        # MAXScript installer with GUI
-├── CLAUDE.md                       # This file - development guide
-├── README.md                       # User-facing documentation
+├── eski-layer-exporter.py         # FBX exporter module (NEW in v0.25.0)
+├── install-Eski-Layer-Manager.ms  # MAXScript installer with GUI
+├── CLAUDE.md                      # This file - development guide
+├── README.md                      # User-facing documentation
 ├── docs/
 │   ├── wishlist.txt               # Feature specifications and priorities
 │   ├── TROUBLESHOOTING.md         # Common issues and solutions
@@ -75,18 +76,29 @@ This is the recommended pattern for 3ds Max tool development when building compl
 - **Split-view UI:** Top section shows layers tree, bottom section shows objects in selected layer
 - **Object management:** Select objects in tree to select them in scene, drag objects to reassign to different layers
 
-**install-Eski-Layer-Manager.ms** - MAXScript installer with GUI
+**eski-layer-exporter.py** - FBX export module (NEW in v0.25.0)
+- `FBXExporter` class: Core FBX export logic with animation takes
+- `FBXExportDialog` class: Qt dialog for export options
+- Animation take management (create, delete, list takes)
+- Timeline range management
+- `show_exporter()`: Entry point function
+
+**install-Eski-Layer-Manager.ms** - MAXScript installer with GUI (v0.21.0+)
 - Creates macro button in "Eski Tools" category
-- Auto-copies Python file from repo to user scripts directory
+- Auto-copies **both Python modules** (eski-layer-manager.py and eski-layer-exporter.py) from repo to user scripts directory
 - Searches multiple locations: script folder, Desktop, Downloads, Documents
 - Installs to `#userScripts` (user-writable), NOT `#scripts` (requires admin)
 - Generates `EskiLayerManager.mcr` in `#userMacros`
-- Uninstaller removes both .mcr and .py files
+- Uninstaller removes .mcr and both .py files
 - Note: Actions persist in memory until 3ds Max restart (MAXScript limitation)
 
 ### File Naming Convention
 
-Important: The installer copies `eski-layer-manager.py` → `eski_layer_manager.py` (hyphen becomes underscore) to make it importable as a Python module.
+Important: The installer copies files with hyphens to underscores to make them importable as Python modules:
+- `eski-layer-manager.py` → `eski_layer_manager.py`
+- `eski-layer-exporter.py` → `eski_layer_exporter.py`
+
+This allows importing via: `import eski_layer_manager` and `import eski_layer_exporter`
 
 ## Critical Architecture Details
 
@@ -350,9 +362,11 @@ When updating versions:
 Both versions should match for major releases, but installer version may lag behind if only Python code changes.
 
 Update these locations when bumping versions:
-- eski-layer-manager.py line 4: Docstring `Version: X.X.X`
-- eski-layer-manager.py line 35: `VERSION = "X.X.X"`
-- install-Eski-Layer-Manager.ms line 5: `local installerVersion = "X.X.X"` (only when installer changes)
+- eski-layer-manager.py line 5: Docstring `Version: X.X.X (YYYY-MM-DD HH:MM)`
+- eski-layer-manager.py line 36: `VERSION = "X.X.X (YYYY-MM-DD HH:MM)"`
+- eski-layer-exporter.py line 5: Docstring `Version: X.X.X (YYYY-MM-DD)`
+- eski-layer-exporter.py line 18: `VERSION = "X.X.X (YYYY-MM-DD)"`
+- install-Eski-Layer-Manager.ms line 6: `local installerVersion = "X.X.X (YYYY-MM-DD)"` (only when installer changes)
 
 ## Important 3ds Max Integration Notes
 
