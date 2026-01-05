@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.4.1 (2026-01-05 15:55)
+Version: 0.4.2 (2026-01-05 15:58)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.4.1 (2026-01-05 15:55)"
+VERSION = "0.4.2 (2026-01-05 15:58)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -684,17 +684,15 @@ class EskiExporterDialog(QtWidgets.QDialog):
         # Clear folder path
         self.file_path_edit.clear()
 
-        # Uncheck all layers
-        for i in range(self.layers_tree.topLevelItemCount()):
-            item = self.layers_tree.topLevelItem(i)
-            item.setCheckState(0, QtCore.Qt.Unchecked)
-
         # Clear animation clips
         self.clips_table.setRowCount(0)
 
         # Restore signals
         self.layers_tree.blockSignals(False)
         self.clips_table.blockSignals(False)
+
+        # Refresh layers tree (this will also uncheck all layers)
+        self.refresh_layers()
 
         # Update status
         self.status_label.setText("Ready to export")
