@@ -27,7 +27,8 @@
       "Bash(dir /B /S)",
       "Bash(move:*)",
       "Bash(ls:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(git merge:*)"
     ],
     "deny": [],
     "ask": []
