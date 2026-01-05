@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.24.2 (2025-12-19 14:30)
+Version: 0.24.2 (2024-12-19 14:30)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.24.2 (2025-12-19 14:30)"
+VERSION = "0.24.2 (2024-12-19 14:30)"
 VERSION_DISPLAY_DURATION = 10000  # Show version for 10 seconds before tips
 
 # Module initialization guard - prevents re-initialization on repeated imports
