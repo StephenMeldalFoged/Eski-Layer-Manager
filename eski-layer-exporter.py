@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.3.6 (2026-01-05 15:45)
+Version: 0.4.0 (2026-01-05 15:50)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.3.6 (2026-01-05 15:45)"
+VERSION = "0.4.0 (2026-01-05 15:50)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -99,6 +99,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
         self.animation_clips = []  # List of animation clips
         self.layer_snapshot = {}  # Track layer names for change detection
         self.setup_ui()
+        self.load_settings()  # Load saved settings from file
         self.register_callbacks()
         self.start_refresh_timer()
 
@@ -230,6 +231,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
         self.clips_table.horizontalHeader().setStretchLastSection(True)
         self.clips_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.clips_table.setAlternatingRowColors(True)
+        self.clips_table.itemChanged.connect(lambda: self.save_settings())
 
         # Set column widths
         self.clips_table.setColumnWidth(0, 60)  # Checkbox column
@@ -257,6 +259,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
                 import os
                 folder_path = os.path.dirname(file_path)
                 self.file_path_edit.setText(folder_path)
+                self.save_settings()
         else:
             # Fallback to Qt dialog for standalone testing
             folder_path = QtWidgets.QFileDialog.getExistingDirectory(
@@ -267,6 +270,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
             if folder_path:
                 self.file_path_edit.setText(folder_path)
+                self.save_settings()
 
     def populate_layers(self):
         """Populate the layers tree from 3ds Max"""
@@ -350,6 +354,9 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
         self.layers_tree.blockSignals(False)
 
+        # Save settings
+        self.save_settings()
+
     def update_layer_highlighting(self):
         """Update green highlighting for checked layers and their children"""
         def update_item_highlight(item):
@@ -378,6 +385,100 @@ class EskiExporterDialog(QtWidgets.QDialog):
                 return True
             parent = parent.parent()
         return False
+
+    def save_settings(self):
+        """Save exporter settings to the 3ds Max file"""
+        if not rt:
+            return
+
+        try:
+            import json
+
+            # Collect current settings
+            settings = {
+                'export_folder': self.file_path_edit.text(),
+                'checked_layers': [],
+                'animation_clips': []
+            }
+
+            # Save checked layers
+            for i in range(self.layers_tree.topLevelItemCount()):
+                item = self.layers_tree.topLevelItem(i)
+                if item.checkState(0) == QtCore.Qt.Checked:
+                    layer_name = item.data(0, QtCore.Qt.UserRole)
+                    settings['checked_layers'].append(layer_name)
+
+            # Save animation clips
+            for row in range(self.clips_table.rowCount()):
+                clip_data = {
+                    'name': self.clips_table.item(row, 1).text(),
+                    'start': self.clips_table.item(row, 2).text(),
+                    'end': self.clips_table.item(row, 3).text(),
+                    'export': self.clips_table.cellWidget(row, 0).findChild(QtWidgets.QCheckBox).isChecked()
+                }
+                settings['animation_clips'].append(clip_data)
+
+            # Save to file properties
+            settings_json = json.dumps(settings)
+            rt.fileProperties.addProperty(rt.Name("EskiExporterSettings"), settings_json)
+
+        except Exception as e:
+            print(f"[Exporter] Error saving settings: {e}")
+
+    def load_settings(self):
+        """Load exporter settings from the 3ds Max file"""
+        if not rt:
+            return
+
+        try:
+            import json
+
+            # Try to load settings from file properties
+            settings_json = rt.fileProperties.findProperty(rt.Name("EskiExporterSettings"))
+
+            if settings_json and str(settings_json) != "undefined":
+                settings = json.loads(str(settings_json))
+
+                # Restore export folder
+                if settings.get('export_folder'):
+                    self.file_path_edit.setText(settings['export_folder'])
+
+                # Restore checked layers (will be applied after layers are populated)
+                self.saved_checked_layers = set(settings.get('checked_layers', []))
+
+                # Restore animation clips
+                for clip_data in settings.get('animation_clips', []):
+                    row = self.clips_table.rowCount()
+                    self.clips_table.insertRow(row)
+
+                    # Checkbox
+                    checkbox = QtWidgets.QCheckBox()
+                    checkbox.setChecked(clip_data.get('export', True))
+                    checkbox_widget = QtWidgets.QWidget()
+                    checkbox_layout = QtWidgets.QHBoxLayout(checkbox_widget)
+                    checkbox_layout.addWidget(checkbox)
+                    checkbox_layout.setAlignment(QtCore.Qt.AlignCenter)
+                    checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                    self.clips_table.setCellWidget(row, 0, checkbox_widget)
+
+                    # Clip name
+                    name_item = QtWidgets.QTableWidgetItem(clip_data.get('name', ''))
+                    self.clips_table.setItem(row, 1, name_item)
+
+                    # Start frame
+                    start_item = QtWidgets.QTableWidgetItem(clip_data.get('start', '0'))
+                    self.clips_table.setItem(row, 2, start_item)
+
+                    # End frame
+                    end_item = QtWidgets.QTableWidgetItem(clip_data.get('end', '100'))
+                    self.clips_table.setItem(row, 3, end_item)
+
+        except Exception as e:
+            print(f"[Exporter] Error loading settings: {e}")
+
+        # Initialize saved_checked_layers if not set
+        if not hasattr(self, 'saved_checked_layers'):
+            self.saved_checked_layers = set()
 
     def add_clip(self):
         """Add a new animation clip"""
@@ -417,6 +518,9 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
         self.status_label.setText(f"Added clip: Clip_{row + 1}")
 
+        # Save settings
+        self.save_settings()
+
     def remove_clip(self):
         """Remove selected animation clip"""
         current_row = self.clips_table.currentRow()
@@ -424,6 +528,9 @@ class EskiExporterDialog(QtWidgets.QDialog):
             clip_name = self.clips_table.item(current_row, 1).text()
             self.clips_table.removeRow(current_row)
             self.status_label.setText(f"Removed clip: {clip_name}")
+
+            # Save settings
+            self.save_settings()
         else:
             self.status_label.setText("No clip selected to remove")
 
@@ -492,6 +599,11 @@ class EskiExporterDialog(QtWidgets.QDialog):
             if item.checkState(0) == QtCore.Qt.Checked:
                 layer_name = item.data(0, QtCore.Qt.UserRole)
                 checked_layers.add(layer_name)
+
+        # Merge with saved checked layers from file
+        if hasattr(self, 'saved_checked_layers'):
+            checked_layers.update(self.saved_checked_layers)
+            self.saved_checked_layers = set()  # Clear after first use
 
         # Repopulate layers
         self.populate_layers()
