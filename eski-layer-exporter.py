@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.2.4 (2026-01-05 15:12)
+Version: 0.2.5 (2026-01-05 15:15)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.2.4 (2026-01-05 15:12)"
+VERSION = "0.2.5 (2026-01-05 15:15)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -159,12 +159,12 @@ class EskiExporterDialog(QtWidgets.QDialog):
         file_row = QtWidgets.QHBoxLayout()
 
         self.file_path_edit = QtWidgets.QLineEdit()
-        self.file_path_edit.setPlaceholderText("Select output FBX file path...")
+        self.file_path_edit.setPlaceholderText("Select output folder for FBX files...")
         file_row.addWidget(self.file_path_edit, 1)
 
         browse_btn = QtWidgets.QPushButton("Browse...")
         browse_btn.setMinimumWidth(80)
-        browse_btn.clicked.connect(self.browse_file)
+        browse_btn.clicked.connect(self.browse_folder)
         file_row.addWidget(browse_btn)
 
         layout.addLayout(file_row)
@@ -235,31 +235,25 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
         return section
 
-    def browse_file(self):
-        """Open file browser for FBX output using 3ds Max native dialog"""
+    def browse_folder(self):
+        """Open folder browser for FBX export location using 3ds Max native dialog"""
         if rt:
-            # Use 3ds Max native file dialog
-            file_path = rt.getSaveFileName(
-                caption="Export FBX File",
-                filename="",
-                types="FBX Files (*.fbx)|*.fbx|All Files (*.*)|*.*"
+            # Use 3ds Max native folder dialog
+            folder_path = rt.getSavePath(
+                caption="Select Export Folder for FBX Files"
             )
         else:
             # Fallback to Qt dialog for standalone testing
-            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            folder_path = QtWidgets.QFileDialog.getExistingDirectory(
                 self,
-                "Export FBX File",
-                "",
-                "FBX Files (*.fbx);;All Files (*.*)"
+                "Select Export Folder for FBX Files",
+                ""
             )
 
-        # Check if file_path is valid (not None/undefined)
-        if file_path and str(file_path) != "undefined":
-            file_path = str(file_path)
-            # Ensure .fbx extension
-            if not file_path.lower().endswith('.fbx'):
-                file_path += '.fbx'
-            self.file_path_edit.setText(file_path)
+        # Check if folder_path is valid (not None/undefined)
+        if folder_path and str(folder_path) != "undefined":
+            folder_path = str(folder_path)
+            self.file_path_edit.setText(folder_path)
 
     def populate_layers(self):
         """Populate the layers tree from 3ds Max"""
@@ -409,13 +403,13 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
     def do_export(self):
         """Perform the FBX export"""
-        file_path = self.file_path_edit.text().strip()
+        folder_path = self.file_path_edit.text().strip()
 
-        if not file_path:
+        if not folder_path:
             QtWidgets.QMessageBox.warning(
                 self,
-                "No File Selected",
-                "Please select an output FBX file path."
+                "No Folder Selected",
+                "Please select an output folder for FBX files."
             )
             return
 
@@ -427,7 +421,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
         QtWidgets.QMessageBox.information(
             self,
             "Export Ready",
-            f"Export functionality will be implemented next.\nTarget file: {file_path}"
+            f"Export functionality will be implemented next.\nTarget folder: {folder_path}\n\nFiles will be named based on layer names."
         )
         self.status_label.setText("Ready to export")
 
