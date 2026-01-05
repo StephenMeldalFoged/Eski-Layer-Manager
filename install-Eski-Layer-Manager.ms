@@ -3,7 +3,7 @@
 
 (
     -- Version of the installer
-    local installerVersion = "0.21.0 (2026-01-05 14:01)"
+    local installerVersion = "0.21.1 (2026-01-05 14:36)"
 
     -- Function to check if macro files exist
     fn macrosExist = (
@@ -416,16 +416,17 @@ if 'eski_layer_manager' in sys.modules:
                 statusText += "  " + (getDir #userScripts) + "\n"
             )
 
-            -- Reload the Python module to pick up changes
+            -- Reload the Python modules to pick up changes
             local reloadSuccess = false
             if pythonCopied then (
                 try (
                     python.Execute "import importlib"
                     python.Execute "if 'eski_layer_manager' in sys.modules: importlib.reload(sys.modules['eski_layer_manager'])"
-                    statusText += "✓ Python module reloaded\n\n"
+                    python.Execute "if 'eski_layer_exporter' in sys.modules: importlib.reload(sys.modules['eski_layer_exporter'])"
+                    statusText += "✓ Python modules reloaded\n\n"
                     reloadSuccess = true
                 ) catch (
-                    statusText += "⚠ Could not reload Python module\n\n"
+                    statusText += "⚠ Could not reload Python modules\n\n"
                 )
             ) else (
                 statusText += "\n"
