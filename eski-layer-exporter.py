@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.2.7 (2026-01-05 15:22)
+Version: 0.2.8 (2026-01-05 15:25)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.2.7 (2026-01-05 15:22)"
+VERSION = "0.2.8 (2026-01-05 15:25)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -288,6 +288,9 @@ class EskiExporterDialog(QtWidgets.QDialog):
             if parent is None or str(parent) == "undefined":
                 root_layers.append(layer)
 
+        # Sort root layers alphabetically by name
+        root_layers.sort(key=lambda layer: layer.name.lower())
+
         # Add root layers to tree
         for layer in root_layers:
             self.add_layer_to_tree(layer, None)
@@ -317,10 +320,17 @@ class EskiExporterDialog(QtWidgets.QDialog):
         else:
             self.layers_tree.addTopLevelItem(item)
 
-        # Add children
+        # Add children (sorted alphabetically)
         num_children = layer.getNumChildren()
+        children = []
         for i in range(num_children):
             child_layer = layer.getChild(i + 1)  # MAXScript uses 1-based indexing
+            children.append(child_layer)
+
+        # Sort children alphabetically by name
+        children.sort(key=lambda child: child.name.lower())
+
+        for child_layer in children:
             self.add_layer_to_tree(child_layer, item)
 
         return item
