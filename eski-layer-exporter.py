@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.4.4 (2026-01-05 16:46)
+Version: 0.4.5 (2026-01-05 16:51)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.4.4 (2026-01-05 16:46)"
+VERSION = "0.4.5 (2026-01-05 16:51)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -420,7 +420,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
             # Save to file properties
             settings_json = json.dumps(settings)
-            rt.fileProperties.addProperty(rt.Name("EskiExporterSettings"), settings_json)
+            rt.fileProperties.addProperty(rt.Name("custom"), rt.Name("EskiExporterSettings"), settings_json)
 
         except Exception as e:
             print(f"[Exporter] Error saving settings: {e}")
@@ -434,7 +434,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
             import json
 
             # Try to load settings from file properties
-            settings_json = rt.fileProperties.findProperty(rt.Name("EskiExporterSettings"))
+            settings_json = rt.fileProperties.findProperty(rt.Name("custom"), rt.Name("EskiExporterSettings"))
 
             if settings_json and str(settings_json) != "undefined":
                 settings = json.loads(str(settings_json))
@@ -638,7 +638,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
             # File reset callback - clear settings
             rt.callbacks.addScript(
                 rt.Name("systemPostReset"),
-                "python.execute('import eski_layer_exporter; eski_layer_exporter.clear_settings_from_callback()')",
+                "python.execute('print(\"[Exporter] systemPostReset callback fired\"); import eski_layer_exporter; eski_layer_exporter.clear_settings_from_callback()')",
                 id=rt.Name("EskiExporterReset")
             )
 
