@@ -2784,7 +2784,7 @@ fn EskiLayerManagerSelectionCallback = (
             # Note: postMerge callback not supported in 3ds Max 2026
 
             # Register callback for selection changes (update green dot indicators)
-            rt.callbacks.addScript(rt.Name("selectionSetChanged"), "EskiLayerManagerSelectionCallback()")
+            rt.callbacks.addScript(rt.Name("selectionSetChanged"), "python.execute('import eski_layer_manager; eski_layer_manager.update_selection_from_callback()')", id=rt.Name("EskiLayerManagerSelectionCallback"))
 
             pass  # Debug print removed
         except Exception as e:
@@ -2801,6 +2801,7 @@ fn EskiLayerManagerSelectionCallback = (
             rt.callbacks.removeScripts(rt.Name("layerDeleted"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("nodeLayerChanged"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("layerCurrent"), id=rt.Name("EskiLayerManagerCurrentCallback"))
+            rt.callbacks.removeScripts(rt.Name("selectionSetChanged"), id=rt.Name("EskiLayerManagerSelectionCallback"))
             rt.callbacks.removeScripts(rt.Name("filePostOpen"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("systemPostReset"), id=rt.Name("EskiLayerManagerCallback"))
             rt.callbacks.removeScripts(rt.Name("systemPostNew"), id=rt.Name("EskiLayerManagerCallback"))
