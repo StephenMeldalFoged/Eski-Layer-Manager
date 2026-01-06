@@ -671,6 +671,9 @@ callbacks.show()
 - ✓ Singleton pattern (toggle show/hide)
 - ✓ Standalone testing mode
 
+**FBX Exporter - TODO/Pending:**
+- ⚠️ **REMINDER: Split up animation clips area** - User wants this section refactored/redesigned
+
 **Planned Features:**
 See `docs/wishlist.txt` for detailed feature specifications and priorities.
 
