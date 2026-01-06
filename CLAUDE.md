@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, improving upon the built-in layer management tools.
 
-**Current Version:** 0.24.3 (2026-01-05 14:27)
+**Current Versions:**
+- Layer Manager: 0.24.3 (2026-01-05 14:27)
+- Layer Exporter: 0.7.1 (2026-01-05 20:05) - *in exporter branch*
 
 ## Quick Reference
 
@@ -20,9 +22,13 @@ python eski-layer-manager.py
 # Test singleton pattern (in 3ds Max)
 python.ExecuteFile "E:\\Github\\Eski-Layer-Manager\\tests\\test_singleton.py"
 
-# Launch from 3ds Max Python console
+# Launch Layer Manager from 3ds Max Python console
 import eski_layer_manager
 eski_layer_manager.show_layer_manager()
+
+# Launch Exporter from 3ds Max Python console
+import eski_layer_exporter
+eski_layer_exporter.show_exporter()
 ```
 
 ## Project Structure
@@ -30,7 +36,7 @@ eski_layer_manager.show_layer_manager()
 ```
 Eski-Layer-Manager/
 ├── eski-layer-manager.py          # Main Python application (1100+ lines)
-├── eski-layer-exporter.py         # FBX exporter module (NEW in v0.25.0)
+├── eski-layer-exporter.py         # FBX exporter module (1113 lines) - in exporter branch
 ├── install-Eski-Layer-Manager.ms  # MAXScript installer with GUI
 ├── CLAUDE.md                      # This file - development guide
 ├── README.md                      # User-facing documentation
@@ -76,12 +82,16 @@ This is the recommended pattern for 3ds Max tool development when building compl
 - **Split-view UI:** Top section shows layers tree, bottom section shows objects in selected layer
 - **Object management:** Select objects in tree to select them in scene, drag objects to reassign to different layers
 
-**eski-layer-exporter.py** - FBX export module (NEW in v0.25.0)
-- `FBXExporter` class: Core FBX export logic with animation takes
-- `FBXExportDialog` class: Qt dialog for export options
-- Animation take management (create, delete, list takes)
-- Timeline range management
-- `show_exporter()`: Entry point function
+**eski-layer-exporter.py** - FBX export module (v0.7.1 - in exporter branch)
+- `EskiExporterDialog` class: Main dialog with collapsible sections (QDialog-based, not dockable)
+- `CollapsibleSection` class: Custom widget for collapsible UI sections
+- Singleton pattern with global `_exporter_instance` to prevent multiple windows
+- `show_exporter()`: Toggle entry point (open if closed, close if open)
+- **Settings persistence**: Export folder, checked layers, and animation clips saved with .max file
+- **Adaptive gradient highlighting**: Checked layers highlighted with depth-based color gradient
+- **Hierarchical layer export**: Top-level layer checks include all sublayers recursively
+- **Animation clips management**: Define multiple animation clips with frame ranges
+- **FBX export**: Each checked layer exported as separate .fbx file
 
 **install-Eski-Layer-Manager.ms** - MAXScript installer with GUI (v0.21.0+)
 - Creates macro button in "Eski Tools" category
@@ -305,23 +315,100 @@ Tips array stored in `self.tips` list with 40+ entries covering:
 - Context menu features
 - Visibility and isolation tips
 
+### FBX Exporter Architecture (v0.7.1+) - *exporter branch*
+
+The FBX exporter provides streamlined workflow for exporting layers to separate FBX files with settings persistence:
+
+**Settings Persistence with .max Files:**
+- Uses 3ds Max `fileProperties` API to store settings as JSON in custom properties
+- Stores: export folder path, checked layers (by name), animation clips data
+- Critical API quirk: `findProperty()` returns INDEX, not value - use `getPropertyValue()` to retrieve actual data
+- Pattern: Delete old property before adding new one to update values
+- Settings automatically reload when file is opened via callback system
+
+```python
+# Save settings to file
+settings_json = json.dumps(settings)
+try:
+    rt.fileProperties.deleteProperty(rt.Name("custom"), rt.Name("EskiExporterSettings"))
+except:
+    pass
+escaped_json = settings_json.replace("\\", "\\\\").replace('"', '\\"')
+maxscript_cmd = f'fileProperties.addProperty #custom #EskiExporterSettings "{escaped_json}"'
+rt.execute(maxscript_cmd)
+
+# Load settings from file
+prop_index = rt.fileProperties.findProperty(rt.Name("custom"), rt.Name("EskiExporterSettings"))
+if prop_index and str(prop_index) != "undefined" and prop_index != 0:
+    settings_json = rt.fileProperties.getPropertyValue(rt.Name("custom"), prop_index)
+    settings = json.loads(str(settings_json))
+```
+
+**Adaptive Gradient Highlighting:**
+- Checked layers and their children highlighted with depth-based gradient
+- Algorithm: Find max depth in tree, then distribute color range from dark green (60,120,60) to desaturated gray (35,45,35)
+- Adapts to any hierarchy depth automatically
+- Updates on checkbox state changes
+
+**Layer.nodes() API Pattern:**
+- MAXScript's `layer.nodes` is a function requiring a class filter argument passed by reference
+- Must pass variable with `&` reference operator
+- Pattern: Create local array, pass with `&`, return array
+
+```python
+maxscript_cmd = f'''
+(
+    local theLayer = layerManager.getLayerFromName "{escaped_name}"
+    local result = #()
+    theLayer.nodes &result
+    result
+)
+'''
+nodes_array = rt.execute(maxscript_cmd)
+```
+
+**Callback System:**
+- `filePostOpen`: Close and reopen window to load fresh settings
+- `systemPostReset` / `systemPostNew`: Clear all UI and settings
+- `layerCreated` / `layerDeleted`: Refresh layer tree
+- Timer-based refresh (500ms): Detect scene reset by checking if settings disappeared
+
+**Export Workflow:**
+1. User checks top-level layers to export (includes all sublayers)
+2. Each checked layer collected recursively with all children
+3. Objects selected in 3ds Max viewport
+4. FBX exported with `exportFile` MAXScript command
+5. Silent operation - no success dialog, only status label update
+
+Key methods:
+- `populate_layers()` - Build hierarchical layer tree from 3ds Max
+- `get_layer_objects_recursive()` - Collect objects from layer and all children
+- `save_settings()` / `load_settings()` - Persist settings with file
+- `update_layer_highlighting()` - Apply adaptive gradient to checked layers
+- `do_export()` - Main export logic, creates one .fbx per checked layer
+
 ## Development Workflow
 
 ### Git Branching Strategy
 
-- **main**: Stable releases with version tags
-- **Feature branches**: Named descriptively
+- **main**: Stable releases with version tags for layer manager
+- **exporter**: Development branch for FBX exporter module (eski-layer-exporter.py)
+- **Feature branches**: Named descriptively for specific features
 - Version tags follow semantic versioning (v0.x.x)
 - Detailed version history available in `docs/Eski-LayerManager-By-Claude-Version-History.txt`
-- When creating PRs, target the `main` branch
+- When creating PRs, target the `main` branch (or `exporter` branch for exporter features)
 
 ### Testing the UI
 
 To test UI changes without 3ds Max:
 ```bash
+# Test Layer Manager standalone
 python eski-layer-manager.py
+
+# Test Exporter standalone (exporter branch)
+python eski-layer-exporter.py
 ```
-This runs standalone mode with a basic Qt window (no 3ds Max integration).
+Both run in standalone mode with basic Qt windows (no 3ds Max integration, uses dummy data).
 
 ### Running Tests
 
@@ -365,9 +452,9 @@ Update these locations when bumping versions (use date and time of last edit):
 - eski-layer-manager.py line 5: Docstring `Version: X.X.X (YYYY-MM-DD HH:MM)`
 - eski-layer-manager.py line 36: `VERSION = "X.X.X (YYYY-MM-DD HH:MM)"`
 - eski-layer-exporter.py line 5: Docstring `Version: X.X.X (YYYY-MM-DD HH:MM)`
-- eski-layer-exporter.py line 18: `VERSION = "X.X.X (YYYY-MM-DD HH:MM)"`
+- eski-layer-exporter.py line 26: `VERSION = "X.X.X (YYYY-MM-DD HH:MM)"`
 - install-Eski-Layer-Manager.ms line 6: `local installerVersion = "X.X.X (YYYY-MM-DD HH:MM)"` (only when installer changes)
-- CLAUDE.md line 9: `**Current Version:** X.X.X (YYYY-MM-DD HH:MM)`
+- CLAUDE.md line 10-11: Update both Layer Manager and Exporter versions in `**Current Versions:**` section
 
 ## Important 3ds Max Integration Notes
 
@@ -401,13 +488,36 @@ child = layer.getChild(index)        # 1-based index (MAXScript convention)
 layer.select(True)                   # Select all objects on layer
 num_objects = layer.getNumNodes()
 layer.addnode(node)                  # Assign object to layer
-nodes_array = layer.nodes            # Get all nodes on layer
+
+# Get nodes (CRITICAL: nodes is a function, not a property)
+# Must pass array by reference with & operator
+maxscript_cmd = '''
+(
+    local result = #()
+    theLayer.nodes &result
+    result
+)
+'''
+nodes_array = rt.execute(maxscript_cmd)
 
 # Current layer
 rt.layerManager.current = layer      # Set active layer
+
+# File Properties API (for saving settings with .max file)
+# findProperty returns INDEX, not value!
+prop_index = rt.fileProperties.findProperty(rt.Name("custom"), rt.Name("PropertyName"))
+if prop_index and str(prop_index) != "undefined" and prop_index != 0:
+    value = rt.fileProperties.getPropertyValue(rt.Name("custom"), prop_index)
+
+# To update property, must delete then add
+rt.fileProperties.deleteProperty(rt.Name("custom"), rt.Name("PropertyName"))
+rt.fileProperties.addProperty(rt.Name("custom"), rt.Name("PropertyName"), "value")
 ```
 
-**Critical:** MAXScript uses **1-based indexing** for children (`getChild()`), but Python/pymxs uses **0-based indexing** for layers (`getLayer()`).
+**Critical:**
+- MAXScript uses **1-based indexing** for children (`getChild()`), but Python/pymxs uses **0-based indexing** for layers (`getLayer()`)
+- `layer.nodes` is a FUNCTION requiring a reference argument with `&`, not a property
+- `fileProperties.findProperty()` returns INDEX, use `getPropertyValue()` to get actual value
 
 ### Python Path Handling
 The macro button adds `#userScripts` to Python's `sys.path` at runtime because 3ds Max doesn't automatically include user script directories in Python's search path.
@@ -504,9 +614,24 @@ callbacks.show()
 - Ensure only ONE `itemClicked.emit()` per click event
 - Don't manually emit `itemClicked` in `mousePressEvent` if calling `super()`
 
+**Exporter: Settings not saving/loading (exporter branch)**
+- Ensure using `getPropertyValue()` not `findProperty()` to retrieve value
+- `findProperty()` returns INDEX, not the actual stored value
+- Must delete old property before adding new one to update
+
+**Exporter: "error return without exception set" when exporting (exporter branch)**
+- Issue is with `layer.nodes` access - it's a function, not a property
+- Must use MAXScript with reference variable: `theLayer.nodes &result`
+- Cannot access directly via pymxs like `layer.nodes[i]`
+
+**Exporter: Settings don't clear on file reset (exporter branch)**
+- Use timer to detect scene reset by checking if settings disappeared
+- Check if file property exists but UI has data - means scene was reset
+- Callback system may not fire reliably for all reset scenarios
+
 ## Feature Implementation Status
 
-**Implemented Features:**
+**Layer Manager - Implemented Features:**
 - ✓ Dockable window interface (left/right docking)
 - ✓ Live layer list with automatic refresh via timer and callbacks
 - ✓ Layer hierarchy with parent-child relationships and drag-drop reparenting
@@ -529,6 +654,22 @@ callbacks.show()
 - ✓ Status bar with cycling tips and tricks
 - ✓ Right-click tips reference window
 - ✓ Hover-to-pause status bar timer
+
+**FBX Exporter - Implemented Features (exporter branch):**
+- ✓ Settings persistence with .max file (fileProperties API)
+- ✓ Export folder selection with native 3ds Max dialog
+- ✓ Hierarchical layer tree display
+- ✓ Top-level layer checkbox selection (includes all sublayers)
+- ✓ Adaptive gradient highlighting for checked layers
+- ✓ Collapsible UI sections
+- ✓ Animation clips management (add/remove clips with frame ranges)
+- ✓ FBX export (one file per checked layer)
+- ✓ Recursive object collection from layer hierarchy
+- ✓ Silent export operation (no success dialog)
+- ✓ Automatic refresh on layer changes
+- ✓ File open/reset/new callback handling
+- ✓ Singleton pattern (toggle show/hide)
+- ✓ Standalone testing mode
 
 **Planned Features:**
 See `docs/wishlist.txt` for detailed feature specifications and priorities.
