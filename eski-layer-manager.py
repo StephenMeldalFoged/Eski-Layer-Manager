@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.24.3 (2026-01-05 14:27)
+Version: 0.25.5 (2026-01-08 19:35)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.24.3 (2026-01-05 14:27)"
+VERSION = "0.25.5 (2026-01-08 19:35)"
 VERSION_DISPLAY_DURATION = 10000  # Show version for 10 seconds before tips
 
 # Module initialization guard - prevents re-initialization on repeated imports
@@ -722,6 +722,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         # Setup timer to poll for current layer changes (fallback if callback doesn't work)
         self.setup_sync_timer()
 
+        # Install event filter to pass through hotkeys to 3ds Max
+        self.installEventFilter(self)
+
         # Setup tips rotation
         self.tips = [
             "Tip: Ctrl+Click the eye icon to isolate a layer",
@@ -922,6 +925,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.layer_tree.header().setStretchLastSection(True)  # Stretch single column
         self.layer_tree.header().setVisible(True)  # Show header
         self.layer_tree.setAlternatingRowColors(True)
+        # Set focus policy to not capture keyboard focus - allows hotkeys to pass through
+        self.layer_tree.setFocusPolicy(QtCore.Qt.NoFocus)
 
         # Enable Qt's built-in tree decoration (arrows and connecting lines)
         self.layer_tree.setRootIsDecorated(True)  # Show Qt's expand/collapse arrows
@@ -993,6 +998,8 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.objects_tree.setAlternatingRowColors(True)
         self.objects_tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)  # Enable multi-select
         self.objects_tree.setDragEnabled(True)  # Enable dragging from objects tree
+        # Set focus policy to not capture keyboard focus - allows hotkeys to pass through
+        self.objects_tree.setFocusPolicy(QtCore.Qt.NoFocus)
         self.objects_tree.setItemDelegate(InlineIconDelegate(self))
         self.objects_tree.setStyleSheet("""
             QTreeWidget {
@@ -1075,6 +1082,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         refresh_btn.clicked.connect(self.populate_layers)
         refresh_btn.setToolTip("Refresh Layers")
         refresh_btn.setFixedSize(32, 32)  # Square button
+        refresh_btn.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
 
         # Try to load StateSets/Refresh icon
         try:
@@ -1099,6 +1107,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         create_layer_btn.clicked.connect(self.create_new_layer)
         create_layer_btn.setToolTip("Create New Layer")
         create_layer_btn.setFixedSize(32, 32)  # Square button
+        create_layer_btn.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
 
         # Try to load Layer icon - try multiple paths following StateSets pattern
         icon_loaded = False
@@ -1138,6 +1147,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         delete_layer_btn.clicked.connect(self.delete_selected_layer)
         delete_layer_btn.setToolTip("Delete Selected Layer")
         delete_layer_btn.setFixedSize(32, 32)  # Square button
+        delete_layer_btn.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
 
         # Try to load DeleteAnimLayer icon (correct path: animationLayer/DeleteAnimLayer)
         delete_icon_loaded = False
@@ -1179,6 +1189,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.objects_toggle_btn.clicked.connect(self.on_objects_toggle)
         self.objects_toggle_btn.setFixedHeight(32)  # Match other button height
         self.objects_toggle_btn.setMinimumWidth(70)  # Minimum width for text
+        self.objects_toggle_btn.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
 
         button_layout.addWidget(self.objects_toggle_btn)
 
@@ -1188,6 +1199,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         self.export_btn.clicked.connect(self.on_export_click)
         self.export_btn.setFixedHeight(32)  # Match other button height
         self.export_btn.setMinimumWidth(70)  # Minimum width for text
+        self.export_btn.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
 
         button_layout.addWidget(self.export_btn)
 
@@ -1647,22 +1659,45 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 # Show progress
                 self.progress_bar.setValue(30)
 
-                # Get the new visibility state (toggled)
-                new_hidden_state = not layer.ishidden
+                # Escape layer name for MAXScript
+                escaped_name = layer_name.replace("\\", "\\\\").replace('"', '\\"')
 
-                # Toggle visibility - set the layer hidden state
-                layer.ishidden = new_hidden_state
+                # Toggle visibility with undo support - set layer and objects
+                # layer.nodes is a FUNCTION requiring reference argument, not a property
+                # Returns the new hidden state
+                try:
+                    new_hidden_state = rt.execute(f'''
+                    with undo "Toggle Layer Visibility" on
+                    (
+                        local theLayer = layerManager.getLayerFromName "{escaped_name}"
+                        if theLayer != undefined then
+                        (
+                            -- Toggle layer visibility
+                            local newHiddenState = not theLayer.ishidden
+                            theLayer.ishidden = newHiddenState
+
+                            -- Also hide/unhide all objects on this layer
+                            local result = #()
+                            theLayer.nodes &result
+                            for obj in result do
+                            (
+                                obj.isHidden = newHiddenState
+                            )
+
+                            -- Return the new state
+                            newHiddenState
+                        )
+                        else
+                        (
+                            false
+                        )
+                    )
+                    ''')
+                except Exception as e:
+                    print(f"[ERROR] Failed to toggle visibility: {e}")
+                    new_hidden_state = False
 
                 self.progress_bar.setValue(50)
-
-                # Also hide/unhide all objects on this layer in the viewport
-                # This ensures objects actually disappear/appear in the scene
-                try:
-                    if layer.nodes:
-                        for node in layer.nodes:
-                            node.isHidden = new_hidden_state
-                except Exception as e:
-                    print(f"[ERROR] Failed to hide/unhide objects: {e}")
 
                 self.progress_bar.setValue(70)
 
@@ -1882,6 +1917,9 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 # Show progress start
                 self.progress_bar.setValue(30)
 
+                # Escape layer name for MAXScript
+                escaped_name = layer_name.replace("\\", "\\\\").replace('"', '\\"')
+
                 # Only use performance optimization for 10+ objects
                 if object_count >= 10:
                     try:
@@ -1889,12 +1927,15 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         rt.disableSceneRedraw()
                         self.progress_bar.setValue(50)
 
-                        # Batch assign - use MAXScript with quiet mode to suppress listener output
+                        # Batch assign with undo support - use MAXScript with quiet mode
                         rt.execute(f"""
-                        with quiet on
+                        with undo "Add Selection to Layer" on
                         (
-                            local targetLayer = layerManager.getLayerFromName "{layer_name}"
-                            for obj in selection do targetLayer.addNode obj
+                            with quiet on
+                            (
+                                local targetLayer = layerManager.getLayerFromName "{escaped_name}"
+                                for obj in selection do targetLayer.addNode obj
+                            )
                         )
                         """)
 
@@ -1904,9 +1945,14 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                         # Always re-enable scene redraw
                         rt.enableSceneRedraw()
                 else:
-                    # For small number of objects, just do it normally
-                    for obj in selected_objects:
-                        target_layer.addNode(obj)
+                    # For small number of objects, wrap in undo context
+                    rt.execute(f"""
+                    with undo "Add Selection to Layer" on
+                    (
+                        local targetLayer = layerManager.getLayerFromName "{escaped_name}"
+                        for obj in selection do targetLayer.addNode obj
+                    )
+                    """)
                     self.progress_bar.setValue(80)
 
                 # Complete refresh
@@ -1941,47 +1987,51 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 print(f"[ERROR] Target layer '{target_layer_name}' not found")
                 return
 
+            # Escape layer name for MAXScript
+            escaped_layer_name = target_layer_name.replace("\\", "\\\\").replace('"', '\\"')
+
+            # Build MAXScript array of object names
+            obj_names_maxscript = "#(" + ", ".join([f'"{name}"' for name in object_names]) + ")"
+
             # Only use performance optimization for 10+ objects
             if len(object_names) >= 10:
                 try:
                     # Disable scene redraw for performance with many objects
                     rt.disableSceneRedraw()
 
-                    # Find and reassign each object
-                    success_count = 0
-                    failed_objects = []
-                    for obj_name in object_names:
-                        try:
-                            # Get object by name from 3ds Max
-                            obj = rt.getNodeByName(obj_name)
-                            if obj:
-                                # Assign to new layer
-                                target_layer.addNode(obj)
-                                success_count += 1
-                            else:
-                                failed_objects.append(obj_name)
-                        except Exception as e:
-                            failed_objects.append(obj_name)
+                    # Reassign with undo support using MAXScript
+                    rt.execute(f"""
+                    with undo "Reassign Objects to Layer" on
+                    (
+                        local targetLayer = layerManager.getLayerFromName "{escaped_layer_name}"
+                        local objNames = {obj_names_maxscript}
+                        for objName in objNames do
+                        (
+                            local obj = getNodeByName objName
+                            if obj != undefined then
+                                targetLayer.addNode obj
+                        )
+                    )
+                    """)
 
                 finally:
                     # Always re-enable scene redraw
                     rt.enableSceneRedraw()
             else:
-                # For small number of objects, just do it normally
-                success_count = 0
-                failed_objects = []
-                for obj_name in object_names:
-                    try:
-                        # Get object by name from 3ds Max
-                        obj = rt.getNodeByName(obj_name)
-                        if obj:
-                            # Assign to new layer
-                            target_layer.addNode(obj)
-                            success_count += 1
-                        else:
-                            failed_objects.append(obj_name)
-                    except Exception as e:
-                        failed_objects.append(obj_name)
+                # For small number of objects, wrap in undo context
+                rt.execute(f"""
+                with undo "Reassign Objects to Layer" on
+                (
+                    local targetLayer = layerManager.getLayerFromName "{escaped_layer_name}"
+                    local objNames = {obj_names_maxscript}
+                    for objName in objNames do
+                    (
+                        local obj = getNodeByName objName
+                        if obj != undefined then
+                            targetLayer.addNode obj
+                    )
+                )
+                """)
 
             # Refresh the objects tree to show updated list
             # Refresh the currently displayed layer (where objects were dragged from)
@@ -2018,14 +2068,22 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         try:
-            # Create a new layer using newLayer() instead of newLayerFromName()
+            # Wrap in undo context
+            rt.execute('''
+            with undo "Create Layer" on
+            (
+                layerManager.newLayer()
+            )
+            ''')
+
+            # Get the newly created layer (it's the last one)
             layer_manager = rt.layerManager
-            new_layer = layer_manager.newLayer()
+            new_layer = layer_manager.getLayer(layer_manager.count - 1)
 
             if new_layer:
-                # Set the layer name
-                new_layer.setName("Layer")
                 new_layer_name = str(new_layer.name)
+            else:
+                new_layer_name = None
 
             # Refresh the layer list to show the new layer
             self.populate_layers()
@@ -2076,16 +2134,42 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             layer = self._find_layer_by_name(layer_name)
 
             if layer:
-                # Check if layer has any objects
-                node_count = len(layer.nodes) if layer.nodes else 0
+                # Wrap entire operation in undo context for undo support
+                # layer.nodes is a FUNCTION requiring reference argument, not a property
+                escaped_name = layer_name.replace("\\", "\\\\").replace('"', '\\"')
+                maxscript_cmd = f'''
+                (
+                    with undo "Delete Layer" on
+                    (
+                        local theLayer = layerManager.getLayerFromName "{escaped_name}"
+                        if theLayer != undefined then
+                        (
+                            local result = #()
+                            theLayer.nodes &result
 
-                if layer.nodes and node_count > 0:
-                    print(f"[ERROR] Cannot delete layer '{layer_name}' - it contains {node_count} object(s)")
-                    return
+                            -- Move all objects to default layer (layer 0)
+                            local defaultLayer = layerManager.getLayer 0
+                            for obj in result do
+                            (
+                                defaultLayer.addNode obj
+                            )
 
-                # Delete the layer
-                layer_manager = rt.layerManager
-                layer_manager.deleteLayerByName(layer_name)
+                            -- Delete the layer
+                            layerManager.deleteLayerByName "{escaped_name}"
+
+                            result.count
+                        )
+                        else
+                        (
+                            0
+                        )
+                    )
+                )
+                '''
+                node_count = rt.execute(maxscript_cmd)
+
+                if node_count > 0:
+                    print(f"[INFO] Moved {node_count} object(s) from '{layer_name}' to default layer")
 
                 # Refresh the layer list
                 self.populate_layers()
@@ -2115,7 +2199,7 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         pass
 
     def delete_layer(self, layer_name):
-        """Delete a layer by name"""
+        """Delete a layer by name - moves objects to default layer first"""
         if rt is None:
             return
 
@@ -2125,14 +2209,43 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 print(f"[ERROR] Layer '{layer_name}' not found")
                 return
 
-            # Check if layer has objects
-            node_count = len(layer.nodes) if layer.nodes else 0
-            if node_count > 0:
-                print(f"[ERROR] Cannot delete layer '{layer_name}' - it contains {node_count} object(s)")
-                return
+            # Wrap entire operation in undo context for undo support
+            # layer.nodes is a FUNCTION requiring reference argument, not a property
+            escaped_name = layer_name.replace("\\", "\\\\").replace('"', '\\"')
+            maxscript_cmd = f'''
+            (
+                with undo "Delete Layer" on
+                (
+                    local theLayer = layerManager.getLayerFromName "{escaped_name}"
+                    if theLayer != undefined then
+                    (
+                        local result = #()
+                        theLayer.nodes &result
 
-            # Delete the layer
-            rt.layerManager.deleteLayerByName(layer_name)
+                        -- Move all objects to default layer (layer 0)
+                        local defaultLayer = layerManager.getLayer 0
+                        for obj in result do
+                        (
+                            defaultLayer.addNode obj
+                        )
+
+                        -- Delete the layer
+                        layerManager.deleteLayerByName "{escaped_name}"
+
+                        result.count
+                    )
+                    else
+                    (
+                        0
+                    )
+                )
+            )
+            '''
+            node_count = rt.execute(maxscript_cmd)
+
+            if node_count > 0:
+                print(f"[INFO] Moved {node_count} object(s) from '{layer_name}' to default layer")
+
             self.populate_layers()
 
         except Exception as e:
@@ -2149,19 +2262,31 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 print(f"[ERROR] Layer '{layer_name}' not found")
                 return
 
-            # Create new layer
-            new_layer = rt.layerManager.newLayer()
-            new_layer.setName(f"{layer_name}_copy")
+            # Wrap in undo context and use MAXScript for all operations
+            escaped_name = layer_name.replace("\\", "\\\\").replace('"', '\\"')
+            rt.execute(f'''
+            with undo "Duplicate Layer" on
+            (
+                local sourceLayer = layerManager.getLayerFromName "{escaped_name}"
+                if sourceLayer != undefined then
+                (
+                    local newLayer = layerManager.newLayer()
+                    newLayer.setName ("{escaped_name}_copy")
 
-            # Copy properties
-            new_layer.wireColor = source_layer.wireColor
-            new_layer.ishidden = source_layer.ishidden
-            new_layer.isfrozen = source_layer.isfrozen
+                    -- Copy properties
+                    newLayer.wireColor = sourceLayer.wireColor
+                    newLayer.ishidden = sourceLayer.ishidden
+                    newLayer.isfrozen = sourceLayer.isfrozen
 
-            # Set parent if source has parent
-            parent = source_layer.getParent()
-            if parent and parent != rt.undefined:
-                new_layer.setParent(parent)
+                    -- Set parent if source has parent
+                    local parent = sourceLayer.getParent()
+                    if parent != undefined then
+                    (
+                        newLayer.setParent parent
+                    )
+                )
+            )
+            ''')
 
             self.populate_layers()
 
@@ -2174,14 +2299,32 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             return
 
         try:
-            layer = self._find_layer_by_name(layer_name)
-            if not layer:
-                print(f"[ERROR] Layer '{layer_name}' not found")
-                return
+            # Escape layer name for MAXScript
+            escaped_name = layer_name.replace("\\", "\\\\").replace('"', '\\"')
 
-            # Select all objects on this layer
-            if layer.nodes:
-                rt.select(layer.nodes)
+            # layer.nodes is a FUNCTION requiring reference argument, not a property
+            # Must use MAXScript with & reference operator
+            maxscript_cmd = f'''
+            (
+                local theLayer = layerManager.getLayerFromName "{escaped_name}"
+                if theLayer != undefined then
+                (
+                    local result = #()
+                    theLayer.nodes &result
+                    result
+                )
+                else
+                (
+                    #()
+                )
+            )
+            '''
+            nodes_array = rt.execute(maxscript_cmd)
+
+            if nodes_array and len(nodes_array) > 0:
+                rt.select(nodes_array)
+            else:
+                print(f"[INFO] No objects found in layer '{layer_name}'")
 
         except Exception as e:
             print(f"[ERROR] Failed to select layer objects: {e}")
@@ -2240,8 +2383,17 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                 print(f"[ERROR] Layer '{layer_name}' not found")
                 return
 
-            # Toggle freeze state
-            layer.isfrozen = not layer.isfrozen
+            # Toggle freeze state with undo support using MAXScript
+            escaped_name = layer_name.replace("\\", "\\\\").replace('"', '\\"')
+            rt.execute(f'''
+            with undo "Toggle Layer Freeze" on
+            (
+                local theLayer = layerManager.getLayerFromName "{escaped_name}"
+                if theLayer != undefined then
+                    theLayer.isfrozen = not theLayer.isfrozen
+            )
+            ''')
+
             self.populate_layers()
 
         except Exception as e:
@@ -2303,12 +2455,29 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     else:
                         break
 
-            # Set the new parent
+            # Set the new parent with undo support using MAXScript
+            escaped_layer_name = layer_name.replace("\\", "\\\\").replace('"', '\\"')
             if new_parent:
-                layer.setParent(new_parent)
+                escaped_parent_name = new_parent_name.replace("\\", "\\\\").replace('"', '\\"')
+                rt.execute(f'''
+                with undo "Reparent Layer" on
+                (
+                    local theLayer = layerManager.getLayerFromName "{escaped_layer_name}"
+                    local newParent = layerManager.getLayerFromName "{escaped_parent_name}"
+                    if theLayer != undefined and newParent != undefined then
+                        theLayer.setParent newParent
+                )
+                ''')
             else:
                 # Make it a root layer by setting parent to undefined
-                layer.setParent(rt.undefined)
+                rt.execute(f'''
+                with undo "Reparent Layer" on
+                (
+                    local theLayer = layerManager.getLayerFromName "{escaped_layer_name}"
+                    if theLayer != undefined then
+                        theLayer.setParent undefined
+                )
+                ''')
 
             # Refresh the layer list to show the new hierarchy
             self.populate_layers()
@@ -2488,20 +2657,22 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Only process if name actually changed
             if new_name != old_name and new_name:
                 pass  # Debug print removed
-                # Find the layer in 3ds Max by name
-                layer_manager = rt.layerManager
-                layer_count = layer_manager.count
+                # Escape names for MAXScript
+                escaped_old_name = old_name.replace("\\", "\\\\").replace('"', '\\"')
+                escaped_new_name = new_name.replace("\\", "\\\\").replace('"', '\\"')
 
-                for i in range(layer_count):
-                    layer = layer_manager.getLayer(i)
-                    if layer and str(layer.name) == old_name:
-                        # Rename the layer in 3ds Max
-                        layer.setname(new_name)
-                        pass  # Debug print removed
+                # Rename with undo support using MAXScript
+                rt.execute(f'''
+                with undo "Rename Layer" on
+                (
+                    local theLayer = layerManager.getLayerFromName "{escaped_old_name}"
+                    if theLayer != undefined then
+                        theLayer.setname "{escaped_new_name}"
+                )
+                ''')
 
-                        # Refresh the layer list to re-sort alphabetically
-                        self.populate_layers()
-                        break
+                # Refresh the layer list to re-sort alphabetically
+                self.populate_layers()
             else:
                 pass  # Debug print removed
 
@@ -2523,6 +2694,47 @@ class EskiLayerManager(QtWidgets.QDockWidget):
         super(EskiLayerManager, self).showEvent(event)
         # Refresh layers when window is shown
         self.populate_layers()
+
+    def eventFilter(self, obj, event):
+        """Filter events to pass through keyboard shortcuts to 3ds Max"""
+        # Only filter keyboard events
+        if event.type() == QtCore.QEvent.KeyPress:
+            # Check if we're currently editing a layer name
+            if self.editing_layer_name is not None:
+                # We're renaming - let Qt handle it normally
+                return False
+
+            # Check if a line edit has focus (user is typing)
+            focused_widget = QtWidgets.QApplication.focusWidget()
+            if focused_widget and isinstance(focused_widget, QtWidgets.QLineEdit):
+                # User is typing - let Qt handle it normally
+                return False
+
+            # Not editing - ignore the event to pass through to 3ds Max
+            event.ignore()
+            return True  # Event was handled (by ignoring it)
+
+        # Not a keyboard event - let Qt handle it normally
+        return False
+
+    def keyPressEvent(self, event):
+        """Handle key press events - pass through to 3ds Max unless editing"""
+        # Check if we're currently editing a layer name
+        if self.editing_layer_name is not None:
+            # We're renaming - let Qt handle the key press normally
+            super(EskiLayerManager, self).keyPressEvent(event)
+            return
+
+        # Check if any widget in our window has focus and is actively editing
+        focused_widget = QtWidgets.QApplication.focusWidget()
+        if focused_widget and isinstance(focused_widget, QtWidgets.QLineEdit):
+            # A line edit has focus - let it handle the key press
+            super(EskiLayerManager, self).keyPressEvent(event)
+            return
+
+        # Not editing anything - ignore the event so it passes through to 3ds Max
+        # This allows hotkeys like Ctrl+Z, Ctrl+Y, Delete, etc. to work
+        event.ignore()
 
     def setup_sync_timer(self):
         """Setup timer to poll for current layer changes (syncs with native layer manager)"""
@@ -2663,6 +2875,34 @@ class EskiLayerManager(QtWidgets.QDockWidget):
             # Get current layer from Max
             layer_manager = rt.layerManager
             current_layer = layer_manager.current
+            layer_count = layer_manager.count
+
+            # Check if layer count changed (layer added/deleted via undo/redo)
+            if not hasattr(self, 'last_layer_count'):
+                self.last_layer_count = layer_count
+
+            if layer_count != self.last_layer_count:
+                self.last_layer_count = layer_count
+                # Full refresh on layer count change
+                self.populate_layers()
+                return
+
+            # Build current layer names list to detect renames
+            current_layer_names = set()
+            for i in range(layer_count):
+                layer = layer_manager.getLayer(i)
+                if layer:
+                    current_layer_names.add(str(layer.name))
+
+            # Check if layer names changed (rename via undo/redo)
+            if not hasattr(self, 'last_layer_names'):
+                self.last_layer_names = current_layer_names
+
+            if current_layer_names != self.last_layer_names:
+                self.last_layer_names = current_layer_names
+                # Full refresh on name changes
+                self.populate_layers()
+                return
 
             # Check if current layer changed
             if current_layer:
@@ -2675,7 +2915,6 @@ class EskiLayerManager(QtWidgets.QDockWidget):
                     self.select_active_layer()
 
             # Check visibility states for all layers
-            layer_count = layer_manager.count
             visibility_changed = False
 
             for i in range(layer_count):
@@ -2776,6 +3015,7 @@ fn EskiLayerManagerSelectionCallback = (
                 pass  # Debug print removed
                 # Some Max versions might use different callback names
                 # We'll rely on the refresh from clicking in our UI instead
+
 
             # Register callbacks for scene events (use scene refresh - reopen window)
             rt.callbacks.addScript(rt.Name("filePostOpen"), "EskiLayerManagerSceneCallback()")

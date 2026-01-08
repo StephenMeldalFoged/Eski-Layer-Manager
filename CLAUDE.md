@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Eski Layer Manager** is a dockable layer and object manager utility for Autodesk 3ds Max 2026+. It provides a modern Qt-based UI for managing layers and objects within 3ds Max, improving upon the built-in layer management tools.
 
 **Current Versions:**
-- Layer Manager: 0.24.3 (2026-01-05 14:27)
-- Layer Exporter: 0.7.1 (2026-01-05 20:05) - *in exporter branch*
+- Layer Manager: 0.25.5 (2026-01-08 19:35)
+- Layer Exporter: 0.7.2 (2026-01-08 19:43) - *in exporter branch*
 
 ## Quick Reference
 

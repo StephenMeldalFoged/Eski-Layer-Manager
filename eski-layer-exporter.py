@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.7.1 (2026-01-05 20:05)
+Version: 0.7.2 (2026-01-08 19:43)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.7.1 (2026-01-05 20:05)"
+VERSION = "0.7.2 (2026-01-08 19:43)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -45,6 +45,7 @@ class CollapsibleSection(QtWidgets.QWidget):
 
         # Header button
         self.header_btn = QtWidgets.QPushButton(f"▼ {title}")
+        self.header_btn.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
         self.header_btn.setStyleSheet("""
             QPushButton {
                 text-align: left;
@@ -130,6 +131,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
         # === Export Button ===
         export_btn = QtWidgets.QPushButton("Export FBX")
+        export_btn.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
         export_btn.setMinimumHeight(40)
         export_btn.setStyleSheet("""
             QPushButton {
@@ -165,11 +167,13 @@ class EskiExporterDialog(QtWidgets.QDialog):
         self.file_path_edit = QtWidgets.QLineEdit()
         self.file_path_edit.setPlaceholderText("Select output folder for FBX files...")
         self.file_path_edit.setReadOnly(True)
+        self.file_path_edit.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
         self.file_path_edit.setStyleSheet("QLineEdit[readOnly=\"true\"] { background-color: #3a3a3a; }")
         file_row.addWidget(self.file_path_edit, 1)
 
         browse_btn = QtWidgets.QPushButton("Browse...")
         browse_btn.setMinimumWidth(80)
+        browse_btn.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
         browse_btn.clicked.connect(self.browse_folder)
         file_row.addWidget(browse_btn)
 
@@ -191,6 +195,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
         self.layers_tree = QtWidgets.QTreeWidget()
         self.layers_tree.setHeaderHidden(True)
         self.layers_tree.setAlternatingRowColors(True)
+        self.layers_tree.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
         self.layers_tree.setMinimumHeight(150)
         self.layers_tree.itemChanged.connect(self.on_layer_check_changed)
         layout.addWidget(self.layers_tree)
@@ -209,10 +214,12 @@ class EskiExporterDialog(QtWidgets.QDialog):
         toolbar = QtWidgets.QHBoxLayout()
 
         add_clip_btn = QtWidgets.QPushButton("Add Clip")
+        add_clip_btn.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
         add_clip_btn.clicked.connect(self.add_clip)
         toolbar.addWidget(add_clip_btn)
 
         remove_clip_btn = QtWidgets.QPushButton("Remove Clip")
+        remove_clip_btn.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
         remove_clip_btn.clicked.connect(self.remove_clip)
         toolbar.addWidget(remove_clip_btn)
 
@@ -231,6 +238,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
         self.clips_table.horizontalHeader().setStretchLastSection(True)
         self.clips_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.clips_table.setAlternatingRowColors(True)
+        self.clips_table.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
         self.clips_table.itemChanged.connect(lambda: self.save_settings())
 
         # Set column widths
@@ -533,6 +541,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
                         # Checkbox
                         checkbox = QtWidgets.QCheckBox()
                         checkbox.setChecked(clip_data.get('export', True))
+                        checkbox.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
                         checkbox_widget = QtWidgets.QWidget()
                         checkbox_layout = QtWidgets.QHBoxLayout(checkbox_widget)
                         checkbox_layout.addWidget(checkbox)
@@ -590,6 +599,7 @@ class EskiExporterDialog(QtWidgets.QDialog):
         # Checkbox
         checkbox = QtWidgets.QCheckBox()
         checkbox.setChecked(True)
+        checkbox.setFocusPolicy(QtCore.Qt.NoFocus)  # Don't capture keyboard focus
         checkbox_widget = QtWidgets.QWidget()
         checkbox_layout = QtWidgets.QHBoxLayout(checkbox_widget)
         checkbox_layout.addWidget(checkbox)
