@@ -225,6 +225,35 @@ Technical Details:
 
 ---
 
+Version 0.25.6 (Fix Eye Icon Double-Fire on Selected Layer)
+Date: 2026-04-22
+Git Tag: v0.25.6
+Confirmed compatible: 3ds Max 2027
+
+Bug Fixes:
+- Fixed: clicking the eye icon on the currently-selected layer toggled
+  visibility during LMB press but reverted on release
+- Root cause: CustomTreeWidget.mousePressEvent emitted itemClicked manually
+  on press. For the selected row, Qt's default mouseReleaseEvent also
+  emitted itemClicked, causing a second toggle that cancelled the first.
+  Non-selected rows were unaffected because Qt's internal click tracking
+  wasn't armed (super was skipped on press).
+
+Technical Details:
+- Moved itemClicked.emit() out of mousePressEvent
+- Added mouseReleaseEvent override that fires itemClicked once on release
+  (standard Qt click semantics) and swallows the event so super doesn't
+  double-fire it
+- mousePressEvent now only event.accept()s icon regions to suppress
+  default selection change
+
+Compatibility:
+- First release tested and confirmed working in 3ds Max 2027
+- No API changes needed — pymxs, qtmax, PySide6 all compatible between
+  Max 2026 and 2027 (Python 3.11 -> 3.13, PySide6 6.5 -> 6.8)
+
+---
+
 FUTURE VERSIONS
 ===============
 

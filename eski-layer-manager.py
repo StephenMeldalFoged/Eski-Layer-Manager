@@ -2,7 +2,7 @@
 Eski LayerManager by Claude
 A dockable layer and object manager for 3ds Max
 
-Version: 0.25.5 (2026-01-08 19:35)
+Version: 0.25.6 (2026-04-22 17:03)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -33,7 +33,7 @@ except ImportError:
     print("Warning: qtmax not available. Window will not be dockable.")
 
 
-VERSION = "0.25.5 (2026-01-08 19:35)"
+VERSION = "0.25.6 (2026-04-22 17:03)"
 VERSION_DISPLAY_DURATION = 10000  # Show version for 10 seconds before tips
 
 # Module initialization guard - prevents re-initialization on repeated imports
@@ -300,43 +300,65 @@ class CustomTreeWidget(QtWidgets.QTreeWidget):
         self.viewport().setMouseTracking(True)
 
     def mousePressEvent(self, event):
-        """Intercept mouse press - only allow selection when clicking on layer name"""
+        """Intercept mouse press - suppress default selection when clicking on icons.
+        Icon clicks fire itemClicked in mouseReleaseEvent (standard Qt click semantics)."""
         item = self.itemAt(event.pos())
         if not item:
             super(CustomTreeWidget, self).mousePressEvent(event)
             return
 
-        # Get click position in viewport coordinates
         cursor_pos = event.pos()
-
-        # Get the visual rect for this item
         index = self.indexAt(event.pos())
         visual_rect = self.visualRect(index)
 
-        # Check if clicking on icons (visibility or add selection)
         if hasattr(item, 'click_regions') and hasattr(item, 'current_item_y'):
             y_offset = visual_rect.y() - item.current_item_y
 
-            # Check if clicking on visibility icon
             if 'visibility' in item.click_regions:
                 vis_rect = item.click_regions['visibility'].translated(0, y_offset)
                 if vis_rect.contains(cursor_pos):
-                    # Don't allow selection - just let itemClicked handle the toggle
                     event.accept()
-                    self.itemClicked.emit(item, 0)
                     return
 
-            # Check if clicking on add selection icon
             if 'add_selection' in item.click_regions:
                 add_rect = item.click_regions['add_selection'].translated(0, y_offset)
                 if add_rect.contains(cursor_pos):
-                    # Don't allow selection - just let itemClicked handle the add
+                    event.accept()
+                    return
+
+        super(CustomTreeWidget, self).mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Fire icon clicks on release, not press. Emitting itemClicked in press
+        caused a double-fire on the currently-selected row: Qt's default release
+        handler re-emitted itemClicked, reverting the visibility toggle."""
+        item = self.itemAt(event.pos())
+        if not item:
+            super(CustomTreeWidget, self).mouseReleaseEvent(event)
+            return
+
+        cursor_pos = event.pos()
+        index = self.indexAt(event.pos())
+        visual_rect = self.visualRect(index)
+
+        if hasattr(item, 'click_regions') and hasattr(item, 'current_item_y'):
+            y_offset = visual_rect.y() - item.current_item_y
+
+            if 'visibility' in item.click_regions:
+                vis_rect = item.click_regions['visibility'].translated(0, y_offset)
+                if vis_rect.contains(cursor_pos):
                     event.accept()
                     self.itemClicked.emit(item, 0)
                     return
 
-        # If clicking on name region or anywhere else, allow normal selection
-        super(CustomTreeWidget, self).mousePressEvent(event)
+            if 'add_selection' in item.click_regions:
+                add_rect = item.click_regions['add_selection'].translated(0, y_offset)
+                if add_rect.contains(cursor_pos):
+                    event.accept()
+                    self.itemClicked.emit(item, 0)
+                    return
+
+        super(CustomTreeWidget, self).mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event):
         """Track which item the mouse is hovering over"""
