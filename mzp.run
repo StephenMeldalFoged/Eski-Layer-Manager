@@ -1,0 +1,15 @@
+-- mzp.run — auto-executed when Eski-Layer-Manager.mzp is dragged into 3ds Max.
+-- Resolves to the temp-extracted folder and runs the installer from there.
+
+(
+    local pkgDir = getFilenamePath (getThisScriptFilename())
+    local installer = pkgDir + "install-Eski-Layer-Manager.ms"
+    if doesFileExist installer then
+    (
+        fileIn installer
+    )
+    else
+    (
+        messageBox ("Installer not found in package:\n" + installer) title:"Eski Layer Manager"
+    )
+)
