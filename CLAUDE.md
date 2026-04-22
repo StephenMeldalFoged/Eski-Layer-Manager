@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Current Versions:**
 - Layer Manager: 0.25.5 (2026-01-08 19:35)
-- Layer Exporter: 0.7.2 (2026-01-08 19:43) - *in exporter branch*
+- Layer Exporter: 0.7.6 (2026-01-08 19:59) - *in exporter branch*
 
 ## Quick Reference
 

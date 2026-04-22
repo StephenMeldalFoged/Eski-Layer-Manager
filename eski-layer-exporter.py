@@ -2,7 +2,7 @@
 Eski Exporter by Claude
 Real-Time FBX Exporter with animation clips for 3ds Max 2026+
 
-Version: 0.7.2 (2026-01-08 19:43)
+Version: 0.7.6 (2026-01-08 19:59)
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -23,7 +23,7 @@ except ImportError:
     QTMAX_AVAILABLE = False
     print("Warning: qtmax not available. Window will not have Max integration.")
 
-VERSION = "0.7.2 (2026-01-08 19:43)"
+VERSION = "0.7.6 (2026-01-08 19:59)"
 
 # Singleton pattern - keep reference to prevent garbage collection
 _exporter_instance = None
@@ -233,8 +233,8 @@ class EskiExporterDialog(QtWidgets.QDialog):
 
         # Clips table (placeholder - will be enhanced later)
         self.clips_table = QtWidgets.QTableWidget()
-        self.clips_table.setColumnCount(4)
-        self.clips_table.setHorizontalHeaderLabels(["Export", "Clip Name", "Start Frame", "End Frame"])
+        self.clips_table.setColumnCount(6)
+        self.clips_table.setHorizontalHeaderLabels(["", "Export", "Clip Name", "Start Frame", "End Frame", ""])
         self.clips_table.horizontalHeader().setStretchLastSection(True)
         self.clips_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.clips_table.setAlternatingRowColors(True)
@@ -242,9 +242,12 @@ class EskiExporterDialog(QtWidgets.QDialog):
         self.clips_table.itemChanged.connect(lambda: self.save_settings())
 
         # Set column widths
-        self.clips_table.setColumnWidth(0, 60)  # Checkbox column
-        self.clips_table.setColumnWidth(1, 150)  # Name column
-        self.clips_table.setColumnWidth(2, 100)  # Start frame
+        self.clips_table.setColumnWidth(0, 40)  # Delete button column
+        self.clips_table.setColumnWidth(1, 60)  # Export checkbox column
+        self.clips_table.setColumnWidth(2, 150)  # Name column
+        self.clips_table.setColumnWidth(3, 100)  # Start frame
+        self.clips_table.setColumnWidth(4, 100)  # End frame
+        self.clips_table.setColumnWidth(5, 40)  # Get range button column
 
         layout.addWidget(self.clips_table)
 
@@ -463,10 +466,10 @@ class EskiExporterDialog(QtWidgets.QDialog):
             # Save animation clips
             for row in range(self.clips_table.rowCount()):
                 clip_data = {
-                    'name': self.clips_table.item(row, 1).text(),
-                    'start': self.clips_table.item(row, 2).text(),
-                    'end': self.clips_table.item(row, 3).text(),
-                    'export': self.clips_table.cellWidget(row, 0).findChild(QtWidgets.QCheckBox).isChecked()
+                    'name': self.clips_table.item(row, 2).text(),
+                    'start': self.clips_table.item(row, 3).text(),
+                    'end': self.clips_table.item(row, 4).text(),
+                    'export': self.clips_table.cellWidget(row, 1).findChild(QtWidgets.QCheckBox).isChecked()
                 }
                 settings['animation_clips'].append(clip_data)
 
@@ -538,6 +541,19 @@ class EskiExporterDialog(QtWidgets.QDialog):
                         row = self.clips_table.rowCount()
                         self.clips_table.insertRow(row)
 
+                        # Delete button
+                        delete_btn = QtWidgets.QPushButton("🗑")
+                        delete_btn.setFocusPolicy(QtCore.Qt.NoFocus)
+                        delete_btn.setMaximumWidth(30)
+                        delete_btn.setStyleSheet("QPushButton { padding: 2px; }")
+                        delete_btn.clicked.connect(lambda checked=False, r=row: self.delete_clip_row(r))
+                        delete_btn_widget = QtWidgets.QWidget()
+                        delete_btn_layout = QtWidgets.QHBoxLayout(delete_btn_widget)
+                        delete_btn_layout.addWidget(delete_btn)
+                        delete_btn_layout.setAlignment(QtCore.Qt.AlignCenter)
+                        delete_btn_layout.setContentsMargins(0, 0, 0, 0)
+                        self.clips_table.setCellWidget(row, 0, delete_btn_widget)
+
                         # Checkbox
                         checkbox = QtWidgets.QCheckBox()
                         checkbox.setChecked(clip_data.get('export', True))
@@ -547,19 +563,33 @@ class EskiExporterDialog(QtWidgets.QDialog):
                         checkbox_layout.addWidget(checkbox)
                         checkbox_layout.setAlignment(QtCore.Qt.AlignCenter)
                         checkbox_layout.setContentsMargins(0, 0, 0, 0)
-                        self.clips_table.setCellWidget(row, 0, checkbox_widget)
+                        self.clips_table.setCellWidget(row, 1, checkbox_widget)
 
                         # Clip name
                         name_item = QtWidgets.QTableWidgetItem(clip_data.get('name', ''))
-                        self.clips_table.setItem(row, 1, name_item)
+                        self.clips_table.setItem(row, 2, name_item)
 
                         # Start frame
                         start_item = QtWidgets.QTableWidgetItem(clip_data.get('start', '0'))
-                        self.clips_table.setItem(row, 2, start_item)
+                        self.clips_table.setItem(row, 3, start_item)
 
                         # End frame
                         end_item = QtWidgets.QTableWidgetItem(clip_data.get('end', '100'))
-                        self.clips_table.setItem(row, 3, end_item)
+                        self.clips_table.setItem(row, 4, end_item)
+
+                        # Get range button
+                        get_range_btn = QtWidgets.QPushButton("Range")
+                        get_range_btn.setFocusPolicy(QtCore.Qt.NoFocus)
+                        get_range_btn.setMaximumWidth(60)
+                        get_range_btn.setToolTip("Set to current timeline range")
+                        get_range_btn.setStyleSheet("QPushButton { padding: 2px; }")
+                        get_range_btn.clicked.connect(lambda checked=False, r=row: self.set_clip_to_timeline_range(r))
+                        get_range_btn_widget = QtWidgets.QWidget()
+                        get_range_btn_layout = QtWidgets.QHBoxLayout(get_range_btn_widget)
+                        get_range_btn_layout.addWidget(get_range_btn)
+                        get_range_btn_layout.setAlignment(QtCore.Qt.AlignCenter)
+                        get_range_btn_layout.setContentsMargins(0, 0, 0, 0)
+                        self.clips_table.setCellWidget(row, 5, get_range_btn_widget)
 
                     self.clips_table.blockSignals(False)
 
@@ -592,9 +622,25 @@ class EskiExporterDialog(QtWidgets.QDialog):
             start = 0
             end = 100
 
+        # Block signals during add to prevent premature save_settings call
+        self.clips_table.blockSignals(True)
+
         # For now, just add a placeholder row
         row = self.clips_table.rowCount()
         self.clips_table.insertRow(row)
+
+        # Delete button
+        delete_btn = QtWidgets.QPushButton("🗑")
+        delete_btn.setFocusPolicy(QtCore.Qt.NoFocus)
+        delete_btn.setMaximumWidth(30)
+        delete_btn.setStyleSheet("QPushButton { padding: 2px; }")
+        delete_btn.clicked.connect(lambda checked=False, r=row: self.delete_clip_row(r))
+        delete_btn_widget = QtWidgets.QWidget()
+        delete_btn_layout = QtWidgets.QHBoxLayout(delete_btn_widget)
+        delete_btn_layout.addWidget(delete_btn)
+        delete_btn_layout.setAlignment(QtCore.Qt.AlignCenter)
+        delete_btn_layout.setContentsMargins(0, 0, 0, 0)
+        self.clips_table.setCellWidget(row, 0, delete_btn_widget)
 
         # Checkbox
         checkbox = QtWidgets.QCheckBox()
@@ -605,30 +651,85 @@ class EskiExporterDialog(QtWidgets.QDialog):
         checkbox_layout.addWidget(checkbox)
         checkbox_layout.setAlignment(QtCore.Qt.AlignCenter)
         checkbox_layout.setContentsMargins(0, 0, 0, 0)
-        self.clips_table.setCellWidget(row, 0, checkbox_widget)
+        self.clips_table.setCellWidget(row, 1, checkbox_widget)
 
         # Clip name
         name_item = QtWidgets.QTableWidgetItem(f"Clip_{row + 1}")
-        self.clips_table.setItem(row, 1, name_item)
+        self.clips_table.setItem(row, 2, name_item)
 
         # Start frame
         start_item = QtWidgets.QTableWidgetItem(str(start))
-        self.clips_table.setItem(row, 2, start_item)
+        self.clips_table.setItem(row, 3, start_item)
 
         # End frame
         end_item = QtWidgets.QTableWidgetItem(str(end))
-        self.clips_table.setItem(row, 3, end_item)
+        self.clips_table.setItem(row, 4, end_item)
+
+        # Get range button
+        get_range_btn = QtWidgets.QPushButton("Range")
+        get_range_btn.setFocusPolicy(QtCore.Qt.NoFocus)
+        get_range_btn.setMaximumWidth(60)
+        get_range_btn.setToolTip("Set to current timeline range")
+        get_range_btn.setStyleSheet("QPushButton { padding: 2px; }")
+        get_range_btn.clicked.connect(lambda checked=False, r=row: self.set_clip_to_timeline_range(r))
+        get_range_btn_widget = QtWidgets.QWidget()
+        get_range_btn_layout = QtWidgets.QHBoxLayout(get_range_btn_widget)
+        get_range_btn_layout.addWidget(get_range_btn)
+        get_range_btn_layout.setAlignment(QtCore.Qt.AlignCenter)
+        get_range_btn_layout.setContentsMargins(0, 0, 0, 0)
+        self.clips_table.setCellWidget(row, 5, get_range_btn_widget)
+
+        # Unblock signals
+        self.clips_table.blockSignals(False)
 
         self.status_label.setText(f"Added clip: Clip_{row + 1}")
 
         # Save settings
         self.save_settings()
 
+    def delete_clip_row(self, row):
+        """Delete a specific clip row by its row number"""
+        if row >= 0 and row < self.clips_table.rowCount():
+            clip_name = self.clips_table.item(row, 2).text()  # Column 2 is clip name
+            self.clips_table.removeRow(row)
+            self.status_label.setText(f"Removed clip: {clip_name}")
+
+            # Save settings
+            self.save_settings()
+
+    def set_clip_to_timeline_range(self, row):
+        """Set clip's start and end frames to current timeline range"""
+        if not rt or row < 0 or row >= self.clips_table.rowCount():
+            return
+
+        try:
+            # Get current timeline range
+            start = int(rt.animationRange.start)
+            end = int(rt.animationRange.end)
+
+            # Update start frame (column 3)
+            start_item = self.clips_table.item(row, 3)
+            if start_item:
+                start_item.setText(str(start))
+
+            # Update end frame (column 4)
+            end_item = self.clips_table.item(row, 4)
+            if end_item:
+                end_item.setText(str(end))
+
+            # Save settings
+            self.save_settings()
+
+            clip_name = self.clips_table.item(row, 2).text()
+            self.status_label.setText(f"Updated '{clip_name}' to timeline range: {start}-{end}")
+        except Exception as e:
+            print(f"[Exporter] Error setting clip to timeline range: {e}")
+
     def remove_clip(self):
         """Remove selected animation clip"""
         current_row = self.clips_table.currentRow()
         if current_row >= 0:
-            clip_name = self.clips_table.item(current_row, 1).text()
+            clip_name = self.clips_table.item(current_row, 2).text()  # Column 2 is clip name
             self.clips_table.removeRow(current_row)
             self.status_label.setText(f"Removed clip: {clip_name}")
 
